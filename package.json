@@ -1,0 +1,27 @@
+{
+  "name": "jevman",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node --env-file=.env --import tsx scripts/smoke.ts",
+    "bench": "node --env-file=.env --import tsx scripts/bench.ts",
+    "deaths": "node --import tsx scripts/deaths.mts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
