@@ -8,6 +8,9 @@ export interface Me {
   unavailable?: boolean;
   /** In dev mode: whether the server's key calls Opper or TypeSafe directly. */
   devProvider?: 'opper' | 'typesafe';
+  /** The decision models this key can play, and the one the server uses when the game names none. */
+  models?: string[];
+  defaultModel?: string;
 }
 
 export type AccountView = {
@@ -47,6 +50,9 @@ function parseMe(body: unknown): Me | null {
   const projectName = text(b.projectName);
   if (projectName) me.projectName = projectName;
   if (b.devProvider === 'opper' || b.devProvider === 'typesafe') me.devProvider = b.devProvider;
+  const defaultModel = text(b.defaultModel);
+  if (defaultModel) me.defaultModel = defaultModel;
+  if (Array.isArray(b.models)) me.models = b.models.filter((m): m is string => typeof m === 'string' && m.length > 0).slice(0, 20);
   return me;
 }
 
@@ -143,7 +149,7 @@ export function renderAccount(root: HTMLElement, view: AccountView): void {
   if (view.kind === 'player') {
     const who = me.user?.name ?? me.user?.email ?? 'Opper user';
     line('Live', `Signed in as ${who}${me.projectName ? ` · ${me.projectName}` : ''}`);
-    text.append(el('p', 'jev plays live; calls bill your Opper wallet.', 'hint'));
+    text.append(el('p', 'The AI plays live; calls bill your Opper wallet.', 'hint'));
     const wallet = el('a', 'My wallet ↗', 'button');
     wallet.href = me.walletUrl;
     wallet.target = '_blank';
@@ -156,11 +162,11 @@ export function renderAccount(root: HTMLElement, view: AccountView): void {
     text.append(el('p', me.devProvider === 'typesafe' ? 'Calls go straight to TypeSafe.' : 'Calls go through Opper with your key.', 'hint'));
     if (me.loginAvailable && !retry) actions.append(signInButton(me));
   } else if (view.kind === 'demo') {
-    line('Recorded demo', 'Sign in to let jev play live');
+    line('Recorded demo', 'Sign in to let the AI play live');
     text.append(runItYourself('Calls bill your own Opper wallet, or '));
     if (!retry) actions.append(signInButton(me));
   } else {
-    line('Signed out', 'Sign in with Opper to keep jev playing');
+    line('Signed out', 'Sign in with Opper to keep the AI playing');
     text.append(runItYourself('Or '));
     if (!retry) actions.append(signInButton(me));
   }

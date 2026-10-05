@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL } from '../shared/models';
 import { ACTOR_NAMES } from './brain';
 import { REVERSE } from './maze';
 import type { SchedulerEvent } from './scheduler';
@@ -34,6 +35,8 @@ export interface GameSummary {
     errors: number;
     /** jev picks the safety check replaced because ghosts had moved into the way. */
     overrides: number;
+    /** The models that made decisions this game, in the order they first did. */
+    models: string[];
   };
 }
 
@@ -65,7 +68,7 @@ export function deathLabel(d: Death): string {
   const who = d.ghost ? ACTOR_NAMES[d.ghost] : 'a ghost';
   switch (d.context) {
     case 'waiting at junction':
-      return `caught by ${who} while waiting for jev at a junction`;
+      return `caught by ${who} while waiting for the model at a junction`;
     case 'ghost ahead in corridor':
       return `ran into ${who} in a corridor`;
     case 'ghost from behind':
@@ -94,6 +97,7 @@ export class GameStats {
   private costEstimated = false;
   private errors = 0;
   private overrides = 0;
+  private readonly models = new Set<string>();
   /** This life's recent situations, oldest first, trimmed to a little more than REACT_SECONDS. */
   private recent: { seconds: number; context: DeathContext | null }[] = [];
   private before: {
@@ -151,6 +155,8 @@ export class GameStats {
   onSchedulerEvent(e: SchedulerEvent): void {
     if (e.type === 'call') {
       this.calls += 1;
+      // Every model that was called (and billed), named as listed: TypeSafe's own id for jev reads as jev.
+      if (e.model) this.models.add(e.model === 'jev-1.13.0' ? DEFAULT_MODEL : e.model);
       if (Number.isFinite(e.latencyMs)) {
         this.latency.sum += e.latencyMs;
         this.latency.n += 1;
@@ -195,6 +201,7 @@ export class GameStats {
         costEstimated: this.costEstimated,
         errors: this.errors,
         overrides: this.overrides,
+        models: [...this.models],
       },
     };
   }

@@ -103,6 +103,7 @@ describe('GameStats', () => {
       costEstimated: true,
       errors: 0,
       overrides: 0,
+      models: [],
     });
   });
 
@@ -111,7 +112,7 @@ describe('GameStats', () => {
     s.pacmanControl = 'jev';
     s.pacman.waiting = true;
     expect(deathContext(s)).toBe('waiting at junction');
-    expect(deathLabel({ ghost: 'inky', context: 'waiting at junction', seconds: 0 })).toBe('caught by Inky while waiting for jev at a junction');
+    expect(deathLabel({ ghost: 'inky', context: 'waiting at junction', seconds: 0 })).toBe('caught by Inky while waiting for the model at a junction');
   });
 });
 
@@ -122,15 +123,15 @@ describe('summaryRows', () => {
       score: 3500, level: 2, seconds: 84.4, pellets: 234, ghostsEaten: 3,
       fruit: [{ kind: 'cherry', points: 100 }, { kind: 'strawberry', points: 300 }],
       deaths: [],
-      jev: { calls: 487, decisions: 560, fallbacks: 2, meanLatencyMs: 252, meanConfidence: 0.71, costUsd: 0.02301, costEstimated: true, errors: 0, overrides: 4 },
+      jev: { calls: 487, decisions: 560, fallbacks: 2, meanLatencyMs: 252, meanConfidence: 0.71, costUsd: 0.02301, costEstimated: true, errors: 0, overrides: 4, models: ['typesafe/jev-1.13.0', 'opper/clef'] },
     });
     expect(rows.game).toEqual([['Level', '2'], ['Time', '1:24'], ['Pellets', '234'], ['Ghosts eaten', '3'], ['Fruit', '🍒 🍓']]);
-    expect(rows.jev).toEqual([['Calls', '487'], ['Decisions', '560'], ['Fallbacks', '2'], ['Safety overrides', '4'], ['Mean latency', '252 ms'], ['Avg confidence', '71%'], ['Cost', '≈$0.0230']]);
+    expect(rows.jev).toEqual([['Calls', '487'], ['Decisions', '560'], ['Models', 'jev 1.13, Clef'], ['Fallbacks', '2'], ['Safety overrides', '4'], ['Mean latency', '252 ms'], ['Avg confidence', '71%'], ['Cost', '≈$0.0230']]);
   });
 
   it('shows dashes when nothing happened', async () => {
     const { summaryRows } = await import('../src/overlay');
-    const rows = summaryRows({ score: 0, level: 1, seconds: 3, pellets: 0, ghostsEaten: 0, fruit: [], deaths: [], jev: { calls: 0, decisions: 0, fallbacks: 0, meanLatencyMs: null, meanConfidence: null, costUsd: null, costEstimated: false, errors: 3, overrides: 0 } });
+    const rows = summaryRows({ score: 0, level: 1, seconds: 3, pellets: 0, ghostsEaten: 0, fruit: [], deaths: [], jev: { calls: 0, decisions: 0, fallbacks: 0, meanLatencyMs: null, meanConfidence: null, costUsd: null, costEstimated: false, errors: 3, overrides: 0, models: [] } });
     expect(rows.game.find(([k]) => k === 'Fruit')![1]).toBe('–');
     expect(rows.jev.slice(4)).toEqual([['Mean latency', '–'], ['Avg confidence', '–'], ['Cost', '–'], ['Failed calls', '3']]);
   });
@@ -194,6 +195,17 @@ describe('GameStats ghost counting within one frame', () => {
     expect(s.maze.powerPellets.has(s.maze.key({ x: 1, y: 23 }))).toBe(false);
     expect(s.frightChain).toBe(0);
     expect(stats.summary(s).ghostsEaten).toBe(1);
+  });
+});
+
+describe('GameStats models', () => {
+  it('lists every model that was called, naming TypeSafe\'s jev id as jev', () => {
+    const stats = new GameStats();
+    const call = (model: string) => ({ type: 'call' as const, model, actors: ['pacman' as const], usage: { input_tokens: 1, output_tokens: 1 }, traceId: null, latencyMs: 200, costUsd: null });
+    stats.onSchedulerEvent(call('opper/clef'));
+    stats.onSchedulerEvent(call('jev-1.13.0'));
+    stats.onSchedulerEvent(call('opper/clef'));
+    expect(stats.summary(createGame()).jev.models).toEqual(['opper/clef', 'typesafe/jev-1.13.0']);
   });
 });
 

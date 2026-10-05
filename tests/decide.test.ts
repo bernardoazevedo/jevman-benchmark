@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SESSION_COOKIE, type AuthConfig, type HttpRequest } from '../server/auth';
 import type { JevTarget } from '../server/jev';
-import { handleDecide, handleDecideRequest, JEV_MODEL, rejectDecideRequest, resolveKey, type DecideDeps } from '../server/decide';
+import { handleDecide, handleDecideRequest, JEV_MODEL, rejectDecideRequest, resolveKey, WARM_TIMEOUT_MS, type DecideDeps } from '../server/decide';
 import { sealSession } from '../server/session';
 
 const body = {
@@ -69,7 +69,7 @@ describe('handleDecide', () => {
     const log = vi.fn();
     const res = await handleDecide(body, deps(fetchMock, { log }));
     expect(res.status).toBe(502);
-    expect((res.body as { error: string }).error).toBe('jev returned HTTP 529: TypeSafe is temporarily overloaded');
+    expect((res.body as { error: string }).error).toBe('jev 1.13 returned HTTP 529: TypeSafe is temporarily overloaded');
     expect(log).toHaveBeenCalled();
   });
 
@@ -79,7 +79,7 @@ describe('handleDecide', () => {
     });
     const res = await handleDecide(body, deps(fetchMock, { timeoutMs: 2000 }));
     expect(res.status).toBe(504);
-    expect((res.body as { error: string }).error).toBe('jev timed out after 2000 ms');
+    expect((res.body as { error: string }).error).toBe('jev 1.13 timed out after 2000 ms');
   });
 
   it('never includes the key in error output', async () => {
@@ -120,13 +120,18 @@ describe('player keys', () => {
   it.each([
     [401, 401, { error: 'Your Opper sign-in has expired — sign in again', signedOut: true, clearSession: true }],
     [402, 402, { error: 'Your Opper wallet is empty — top up to keep playing', walletUrl: 'https://platform.opper.ai/wallet' }],
-    [403, 403, { error: 'typesafe/jev-1.13.0 is not enabled for your Opper account' }],
+    [403, 403, { error: 'jev 1.13 is not enabled for your Opper account' }],
   ])('maps upstream %i to %i for a player key', async (up, status, bodyOut) => {
     const res = await handleDecide(body, deps(upstream(up), { keyMode: 'player' }));
     expect(res).toEqual({ status, body: bodyOut });
   });
-  it('keeps the 502 mapping for the dev key', async () => {
-    expect((await handleDecide(body, deps(upstream(401), { keyMode: 'dev' }))).status).toBe(502);
+  it('reports a rejected or unpaid dev key as such (no sign-in to redo), other failures as 502', async () => {
+    expect(await handleDecide(body, deps(upstream(401), { keyMode: 'dev' }))).toEqual({ status: 401, body: { error: 'The API key in .env was rejected' } });
+    expect(await handleDecide(body, deps(upstream(402), { keyMode: 'dev' }))).toEqual({ status: 402, body: { error: "The API key's Opper wallet is empty" } });
+    expect((await handleDecide(body, deps(upstream(500), { keyMode: 'dev' }))).status).toBe(502);
+  });
+  it('reports a model the dev key may not use as 403, not a passing 502', async () => {
+    expect(await handleDecide(body, deps(upstream(403), { keyMode: 'dev' }))).toEqual({ status: 403, body: { error: 'jev 1.13 is not enabled for this API key' } });
   });
   it('labels log lines with the key mode', async () => {
     const log = vi.fn();
@@ -190,7 +195,7 @@ describe('handleDecideRequest', () => {
     const fetchMock = ok();
     const r = await run(post(), JSON.stringify(body), undefined, fetchMock);
     expect(r.status).toBe(401);
-    expect(JSON.parse(r.body)).toEqual({ error: 'Sign in with Opper to let jev play', signedOut: true });
+    expect(JSON.parse(r.body)).toEqual({ error: 'Sign in with Opper to let the AI play', signedOut: true });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(rejectDecideRequest(post(), cfg, undefined)?.status).toBe(401);
     expect(rejectDecideRequest(post(), cfg, DEV)).toBeNull();
@@ -249,5 +254,43 @@ describe('handleDecideRequest', () => {
     expect(logged).toContain('[redacted]');
     expect(logged).not.toContain('op-player');
     expect(logged).not.toContain('op-dev');
+  });
+});
+
+describe('warming a model up', () => {
+  const DEV: JevTarget = { provider: 'opper', apiKey: 'op-dev', baseUrl: 'https://api.opper.ai' };
+  const cfg: AuthConfig = { redirectUri: 'http://localhost:5173/auth/callback', opperUrl: 'https://api.opper.ai', sessionSecret: 's'.repeat(64) };
+  const post: HttpRequest = { method: 'POST', url: '/api/warm', headers: { 'content-type': 'application/json' } };
+
+  it('sends a fixed tiny question to the named model, whatever else the body holds', async () => {
+    const fetchMock = ok();
+    const r = await handleDecideRequest(post, JSON.stringify({ model: 'opper/clef', questions: { big: 'x'.repeat(5000) } }), cfg, DEV, { fetch: fetchMock, now: () => 0 }, { warm: true });
+    expect(r.status).toBe(200);
+    const sent = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(sent.model).toBe('opper/clef');
+    expect(Object.keys(sent.questions)).toEqual(['warmup']);
+  });
+
+  it('waits far longer than a game call, since a cold model can take many seconds', async () => {
+    // Answers after 2.2 s: past a game call's 2 s timeout, well within a warm-up's.
+    const slow = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise((resolve, reject) => {
+          const t = setTimeout(() => resolve(new Response(JSON.stringify({ answers: {}, usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 })), 2200);
+          init?.signal?.addEventListener('abort', () => (clearTimeout(t), reject(init.signal!.reason)));
+        }),
+    );
+    const decide: HttpRequest = { ...post, url: '/api/decide' };
+    expect((await handleDecideRequest(decide, JSON.stringify(body), cfg, DEV, { fetch: slow, now: () => 0 })).status).toBe(504);
+    expect((await handleDecideRequest(post, JSON.stringify({ model: 'opper/clef' }), cfg, DEV, { fetch: slow, now: () => 0 }, { warm: true })).status).toBe(200);
+    expect(WARM_TIMEOUT_MS).toBeLessThan(30_000); // leaves room in the 35 s shutdown deadline after its 5 s drain
+  }, 10_000);
+
+  it('still refuses unlisted models and cross-site requests', async () => {
+    const fetchMock = ok();
+    expect((await handleDecideRequest(post, JSON.stringify({ model: 'openai/gpt-5' }), cfg, DEV, { fetch: fetchMock, now: () => 0 }, { warm: true })).status).toBe(400);
+    const cross = { ...post, headers: { ...post.headers, 'sec-fetch-site': 'cross-site' } };
+    expect((await handleDecideRequest(cross, '{}', cfg, DEV, { fetch: fetchMock, now: () => 0 }, { warm: true })).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

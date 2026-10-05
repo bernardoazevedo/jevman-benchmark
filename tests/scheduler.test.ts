@@ -132,7 +132,7 @@ describe('Scheduler', () => {
   it('falls back and reports the error when the transport fails', async () => {
     const { calls, events, scheduler } = harness();
     scheduler.update(createGame());
-    calls[0].reject(new Error('jev returned HTTP 529: overloaded'));
+    calls[0].reject(new Error('jev 1.13 returned HTTP 529: overloaded'));
     await flush();
     expect(ofType(events, 'error')[0].message).toMatch(/529/);
     expect(ofType(events, 'decision').every((e) => e.decision.source === 'fallback' && e.decision.reason === 'error')).toBe(true);
@@ -395,3 +395,27 @@ describe('a model per character', () => {
     expect(calls.map((c) => c.body.model)).toEqual(['opper/kev-4b', 'opper/clef']);
   });
 });
+
+describe('switching models mid-game', () => {
+  it('drops an answer from the old model, ready or in flight, and asks the new one', async () => {
+    let model: ModelId = 'opper/clef';
+    const { calls, events, scheduler } = harness({ actors: ['pacman'], modelFor: () => model });
+    const s = createGame();
+    scheduler.update(s);
+    calls[0].resolve(answerAll(calls[0].body));
+    await flush();
+    model = 'opper/kev-4b'; // a card switched Pac-Man to Kev 4B
+    scheduler.update(s);
+    expect(ofType(events, 'superseded')).toHaveLength(1);
+    expect(calls.map((c) => c.body.model)).toEqual(['opper/clef', 'opper/kev-4b']);
+    expect(scheduler.decide(nextDecisionPoint(s, 'pacman')!, s)).toBeNull();
+    // Switch again while Kev's answer is in flight: it arrives stale.
+    model = 'opper/clef-flash';
+    scheduler.update(s);
+    calls[1].resolve(answerAll(calls[1].body));
+    await flush();
+    expect(ofType(events, 'stale')).toHaveLength(1);
+    expect(calls.at(-1)!.body.model).toBe('opper/clef-flash');
+  });
+});
+

@@ -1,14 +1,16 @@
 # jevman
 
-Pac-Man where the characters are driven by the jev decision model (`typesafe/jev-1.13.0`), called
-through Opper or straight from TypeSafe. jev plays one side at a time. In **Watch jev play** (the
-default) jev steers Pac-Man and the ghosts follow the classic scripted rules. In **Play against jev**
-you steer Pac-Man and jev plays the four ghosts. Pick the mode in the Play dialog, or switch with `J`
-during a game.
+Pac-Man where the characters are driven by System One decision models: TypeSafe's jev
+(`typesafe/jev-1.13.0`, the default) and the others Opper serves, called through Opper or (jev only)
+straight from TypeSafe. A model plays one side at a time. In **Watch AI play** (the default) a model
+steers Pac-Man and the ghosts follow the classic scripted rules. In **Play against AI** you steer
+Pac-Man and models play the four ghosts. Pick the mode and the [models](#decision-models) in the Play
+dialog, or switch sides with `J` during a game. `npm run leaderboard` measures which model plays best.
 
-The side panel shows each of jev's decisions with its probabilities, confidence, latency and the
-running cost. Red entries were not jev's own choice: greedy fallbacks used when jev could not answer
-(timeout, error or invalid answer) and safety overrides (see [How decisions work](#how-decisions-work)).
+The side panel shows each decision with its probabilities, confidence, latency, the model that made
+it and the running cost. Red entries were not the model's own choice: greedy fallbacks used when it
+could not answer (timeout, error or invalid answer) and safety overrides (see
+[How decisions work](#how-decisions-work)).
 
 Source: <https://github.com/joch/jevman>
 
@@ -85,8 +87,8 @@ names explicitly (`--pacman-model`, `npm run leaderboard`) must be one of the
   `npm run bench -- --games 1 --pacman jev --ghosts greedy --max 120 --record public/demo/jev-demo.json`;
   re-record it if a change to the game rules makes the replay test fail.
 - `npm run leaderboard` — every decision model plays Pac-Man against the scripted ghosts, with the
-  safety check **off** so the model itself is measured. Writes `bench/leaderboard.json` (ranked by
-  mean score) and prints a table. Same flags as `bench`, plus `--models id,id` (default: all),
+  safety check **off** so the model itself is measured. Writes `public/leaderboard.json` (ranked by
+  mean score), which the site shows at `/leaderboard`, and prints a table. Same flags as `bench`, plus `--models id,id` (default: all),
   `--parallel 4` (games at a time per model); defaults to 8 games per model and a 300 s cap.
 - `npm run deaths -- game.json` — replays a recorded game and prints, for each of Pac-Man's deaths,
   his last few junction decisions with the routes as jev saw them.
@@ -98,12 +100,19 @@ Opper serves several System One decision models with the same API, listed in
 `opper/clef` and `opper/clef-flash` (Cloudflare), `opper/kev-4b` (a Qwen3.5-4B fine-tune by Jared
 Palmer) and `berget/convaiinnovations/laya` (ConvAI Innovations; its 512-token context is shorter
 than one of our questions). The server forwards only these. Through Opper any of them can play; a
-TypeSafe key (option C) reaches jev only. The game itself plays the server's default (jev, or
-`JEV_MODEL`); choosing a model per character in the game comes next.
+TypeSafe key (option C) reaches jev only.
+
+In the game, pick the model in the Play dialog: Pac-Man's model in **Watch AI play**, the ghosts'
+model (one for all, or one per ghost) in **Play against AI**. Each card on the decision panel has a
+dropdown to switch mid-game. Choices are remembered in your browser; the default is the server's
+(jev, or `JEV_MODEL`), and the game only names a model when you pick another one. Opper-hosted
+models scale down when idle, so picking one sends a tiny warm-up call (`POST /api/warm`, one cheap
+call): Play waits for it ("Waking up Clef…"), and a mid-game switch takes over once the new model
+answers.
 
 ## Controls
 
-Arrows/WASD steer Pac-Man in Play against jev · `J` or the Pac-Man button switches mode · `P` pause ·
+Arrows/WASD steer Pac-Man in Play against AI · `J` or the Pac-Man button switches sides · `P` pause ·
 `R` restart · the speed slider slows the game down. Space/Enter presses Play.
 
 ## Cost

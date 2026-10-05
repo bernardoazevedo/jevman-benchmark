@@ -1,0 +1,116 @@
+{
+  "generatedAt": "2026-10-05T20:03:00.912Z",
+  "settings": {
+    "gamesPerModel": 24,
+    "maxSeconds": 300,
+    "safetyCheck": false,
+    "ghosts": "scripted"
+  },
+  "entries": [
+    {
+      "model": "typesafe/jev-1.13.0",
+      "name": "jev 1.13",
+      "games": 24,
+      "meanScore": 3181,
+      "scoreStdError": 186,
+      "meanSurvivedSeconds": 67.6,
+      "meanPellets": 205,
+      "pelletsPerLife": 68,
+      "meanGhostsEaten": 2.8,
+      "fruitEaten": "36/45",
+      "bestLevel": 1,
+      "fallbackRate": 0.034,
+      "meanLatencyMs": 264,
+      "costPerGame": 0.00668,
+      "deathsBy": {
+        "ghost ahead in corridor": 45,
+        "at/near junction": 24,
+        "waiting at junction": 3
+      }
+    },
+    {
+      "model": "opper/clef",
+      "name": "Clef",
+      "games": 24,
+      "meanScore": 3038,
+      "scoreStdError": 125,
+      "meanSurvivedSeconds": 53.2,
+      "meanPellets": 207,
+      "pelletsPerLife": 69,
+      "meanGhostsEaten": 2.7,
+      "fruitEaten": "40/47",
+      "bestLevel": 1,
+      "fallbackRate": 0.059,
+      "meanLatencyMs": 317,
+      "costPerGame": 0.01996,
+      "deathsBy": {
+        "at/near junction": 49,
+        "ghost ahead in corridor": 21,
+        "waiting at junction": 2
+      }
+    },
+    {
+      "model": "opper/clef-flash",
+      "name": "Clef Flash",
+      "games": 24,
+      "meanScore": 2679,
+      "scoreStdError": 130,
+      "meanSurvivedSeconds": 58.9,
+      "meanPellets": 212,
+      "pelletsPerLife": 71,
+      "meanGhostsEaten": 0.9,
+      "fruitEaten": "36/45",
+      "bestLevel": 1,
+      "fallbackRate": 0.026,
+      "meanLatencyMs": 224,
+      "costPerGame": 0.00378,
+      "deathsBy": {
+        "at/near junction": 35,
+        "ghost ahead in corridor": 33,
+        "waiting at junction": 4
+      }
+    },
+    {
+      "model": "opper/kev-4b",
+      "name": "Kev 4B",
+      "games": 24,
+      "meanScore": 1445,
+      "scoreStdError": 22,
+      "meanSurvivedSeconds": 46.4,
+      "meanPellets": 123,
+      "pelletsPerLife": 41,
+      "meanGhostsEaten": 0.1,
+      "fruitEaten": "24/24",
+      "bestLevel": 1,
+      "fallbackRate": 0.047,
+      "meanLatencyMs": 219,
+      "costPerGame": 0.00278,
+      "deathsBy": {
+        "ghost ahead in corridor": 29,
+        "at/near junction": 43
+      }
+    },
+    {
+      "model": "berget/convaiinnovations/laya",
+      "name": "Laya",
+      "games": 24,
+      "meanScore": 650,
+      "scoreStdError": 27,
+      "meanSurvivedSeconds": 39.3,
+      "meanPellets": 58,
+      "pelletsPerLife": 19,
+      "meanGhostsEaten": 0.1,
+      "fruitEaten": "3/3",
+      "bestLevel": 1,
+      "fallbackRate": 0.004,
+      "meanLatencyMs": 86,
+      "costPerGame": 0.00409,
+      "deathsBy": {
+        "at/near junction": 48,
+        "ghost ahead in corridor": 21,
+        "waiting at junction": 3
+      }
+    }
+  ],
+  "skipped": []
+}

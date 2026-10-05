@@ -8,7 +8,11 @@ import { greedyChoice, optionFeatures } from './features';
 import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { GameStats } from './stats';
-import { createHttpTransport } from './transport';
+import { createHttpTransport, warmUp, type TransportHooks } from './transport';
+import { initialChoice, loadStoredChoice, modelOptions, requestModel, saveChoice, type ModelChoice } from './choice';
+import type { ModelPicking } from './picker';
+import { effectiveChoice, ModelWarming } from './warming';
+import { DEFAULT_MODEL, modelName } from '../shared/models';
 import type { Dir } from './types';
 
 const KEYS: Record<string, Dir> = {
@@ -18,11 +22,11 @@ const KEYS: Record<string, Dir> = {
 const DEMO_CAPTION = 'recorded game';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
-// The recorded demo downloads alongside /api/me, so a signed-out visitor doesn't wait for two round trips.
+// The recorded demo downloads alongside /api/me; it plays when the page opens, for everyone.
 const recording = loadRecording('/demo/jev-demo.json');
 const me = await fetchMe();
 const authError = takeAuthError();
-const rec = me.mode === 'none' ? await recording : null;
+const rec = await recording;
 
 let state: GameState = createGame();
 const canvas = $<HTMLCanvasElement>('#game');
@@ -33,7 +37,7 @@ const panelEl = $('#panel');
 let panel = new Panel(panelEl);
 
 const accountEl = $('#account');
-let account: AccountView = { kind: me.mode === 'player' ? 'player' : me.mode === 'dev' ? 'dev' : 'signed-out', me };
+let account: AccountView = { kind: me.mode === 'player' ? 'player' : me.mode === 'dev' ? 'dev' : rec ? 'demo' : 'signed-out', me };
 const showAccount = (view: AccountView) => {
   account = view;
   renderAccount(accountEl, view);
@@ -49,10 +53,25 @@ const pauseBtn = $<HTMLButtonElement>('#pause');
 const speedIn = $<HTMLInputElement>('#speed');
 const speedOut = $('#speed-out');
 const restartBtn = $<HTMLButtonElement>('#restart');
+const playCta = $<HTMLButtonElement>('#play-cta');
+const help = $('.help');
 const hud = { score: $('#score'), level: $('#level'), lives: $('#lives'), fruit: $('#fruit-hud') };
 
+/** Set by a live game: wakes the models that play (they doze off during a long pause); false keeps the game paused. */
+let beforeResume: (() => Promise<boolean>) | null = null;
+let resuming = false;
 function togglePause(): void {
-  if (!overlayEl.hidden) return; // nothing is running behind the Play / game-over card
+  if (!overlayEl.hidden || resuming) return; // nothing is running behind the Play / game-over card
+  if (paused && beforeResume) {
+    resuming = true;
+    pauseBtn.textContent = 'Waking up…';
+    void beforeResume().then((ok) => {
+      resuming = false;
+      paused = !ok || document.hidden;
+      pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    });
+    return;
+  }
   paused = !paused;
   pauseBtn.textContent = paused ? 'Resume' : 'Pause';
 }
@@ -60,33 +79,72 @@ pauseBtn.addEventListener('click', togglePause);
 
 const overlayEl = $('#overlay');
 const keyActions = new Map<string, () => void>([['p', togglePause]]);
-/** What Space/Enter does while an overlay is open (Play, Play again). */
+/** What Space/Enter does while an overlay is open (Play, Play again), or on the demo (open the Play card). */
 let overlayAction: (() => void) | null = null;
-/** Mirrors J presses into the Play card's mode choice until the first game starts. */
-let selectPlayMode: ((mode: 'jev' | 'keyboard') => void) | null = null;
+/** What Escape does: close the Play card and go back to the demo. */
+let closeAction: (() => void) | null = null;
 let steer: ((dir: Dir) => void) | null = null;
-let tick: (dt: number) => void;
+let tick: (dt: number) => void = () => {};
 
-if (rec) {
-  // Signed-out visitors watch a recorded jev game: no input, no /api/decide calls, nothing billed.
-  const demo = new DemoPlayer(rec, { onLoop: () => (panel = new Panel(panelEl, { caption: DEMO_CAPTION })) });
+// The recorded game plays (no input, no /api/decide calls, nothing billed) until a live game starts.
+let demo: DemoPlayer | null = null;
+const LIVE_CONTROLS = [toggleBtn, restartBtn, speedIn];
+function startDemo(r: NonNullable<typeof rec>): void {
+  demo = new DemoPlayer(r, { onLoop: () => (panel = new Panel(panelEl, { caption: DEMO_CAPTION })) });
   state = demo.state;
   panel = new Panel(panelEl, { caption: DEMO_CAPTION });
-  account = { ...account, kind: 'demo' };
-  for (const control of [toggleBtn, restartBtn, speedIn]) {
+  for (const control of LIVE_CONTROLS) {
     control.disabled = true;
-    control.title = 'Sign in to play live';
+    control.title = 'Press Play to play live';
   }
   speedIn.closest('label')!.hidden = true;
-  $('.help').textContent = 'Recorded demo · P pause';
+  help.textContent = 'Recorded game · press Play (or Space) to play live';
+  playCta.hidden = false;
   tick = (dt) => {
-    for (const e of demo.advance(dt)) panel.handle(e);
-    state = demo.state;
+    for (const e of demo!.advance(dt)) panel.handle(e);
+    state = demo!.state;
+  };
+}
+function endDemo(): void {
+  demo = null;
+  for (const control of LIVE_CONTROLS) {
+    control.disabled = false;
+    control.title = '';
+  }
+  speedIn.closest('label')!.hidden = false;
+  help.textContent = 'Arrows/WASD steer when you play Pac-Man · J switch sides · P pause · R restart';
+  playCta.hidden = true;
+}
+
+/** Opens the Play card (or the sign-in card); returns to the demo when closed. */
+let openPlay: () => void;
+const closePlay = () => {
+  hideOverlay(overlayEl);
+  overlayAction = openPlay;
+  closeAction = null;
+  playCta.hidden = false;
+  playCta.focus({ preventScroll: true });
+};
+
+if (me.mode === 'none') {
+  // From "Watch Clef play" while signed out: remember the pick through the sign-in round trip (it is checked against
+  // the models the key can use once signed in).
+  const linked = new URLSearchParams(location.search).get('pacman');
+  if (linked) {
+    const stored = loadStoredChoice();
+    saveChoice({ ...(stored && typeof stored === 'object' ? stored : {}), pacman: linked } as ModelChoice);
+  }
+  // Signed out: the demo, and Play offers sign-in.
+  openPlay = () => {
+    playCta.hidden = true;
+    const card = showPlay(overlayEl, me, { mode: 'jev', onSelect: () => {}, onPlay: () => {}, onClose: rec ? closePlay : undefined });
+    overlayAction = card.action;
+    closeAction = rec ? closePlay : null;
   };
 } else {
-  let signedOutShown = me.mode === 'none';
+  let signedOutShown = false;
   let walletShown = false;
-  const transport = createHttpTransport({
+  const hooks: TransportHooks = {
     onSignedOut: () => {
       if (signedOutShown) return; // render the aria-live region once per signed-in -> signed-out transition
       signedOutShown = true;
@@ -97,7 +155,69 @@ if (rec) {
       walletShown = true;
       showAccount({ ...account, ...walletNotice(url) });
     },
+  };
+  const transport = createHttpTransport(hooks);
+  // Who steers Pac-Man in the next live game (the demo's own state is a recording).
+  let liveControl: 'jev' | 'keyboard' = 'jev';
+  const played = () => jevActors(started ? state : ({ pacmanControl: liveControl } as GameState));
+  // Which model plays each character: the server default until the player picks, remembered in this browser.
+  const defaultModel = me.defaultModel ?? DEFAULT_MODEL;
+  // `wanted` is what the player picked; `choice` is what plays. A newly picked model takes over once it is awake, so a
+  // cold one doesn't turn the next moves into fallbacks.
+  let wanted: ModelChoice = initialChoice(me, loadStoredChoice());
+  // "Watch Clef play" on the leaderboard links here with ?pacman=<model>.
+  const linked = new URLSearchParams(location.search).get('pacman');
+  if (linked && modelOptions(me).some((o) => o.id === linked)) wanted = { ...wanted, pacman: linked };
+  let choice: ModelChoice = { ...wanted };
+  // A model's last permanent warm-up refusal (signed out, wallet, not enabled): Play says that, not "didn't wake up".
+  // Per model: concurrent warm-ups must not overwrite each other's answer.
+  const warmProblems = new Map<string, string>();
+  const problemOf = (models: string[]) => models.map((m) => warmProblems.get(m)).find((p) => p !== undefined);
+  const warming = new ModelWarming({
+    warmUp: async (m) => {
+      const r = await warmUp(m === defaultModel ? undefined : m, hooks);
+      // A refusal holds until the model actually answers (a later timeout doesn't make it less true).
+      if (r.ok) warmProblems.delete(m);
+      else if (r.account) warmProblems.set(m, r.error);
+      return r.ok;
+    },
+    now: () => Date.now(),
   });
+  const playedModels = () => [...new Set(played().map((id) => wanted[id]))];
+  const adopt = () => {
+    choice = effectiveChoice(wanted, choice, (m) => warming.isWarm(m), defaultModel);
+  };
+  /** Warm the models that play now; each takes over as soon as it is awake. */
+  const warmPlayed = () => {
+    for (const m of playedModels()) {
+      void warming.warm(m).then((ok) => {
+        if (ok) panel.clearAlert(`model:${m}`); // that model's retry worked: its "still playing …" note no longer holds
+        if (!ok && started) {
+          // The pick never took over: show what is really playing, and say why.
+          const stuck = played().filter((id) => wanted[id] === m && choice[id] !== m);
+          if (stuck.length) {
+            wanted = { ...wanted, ...Object.fromEntries(stuck.map((id) => [id, choice[id]])) };
+            saveChoice(wanted);
+            panel.syncModels();
+            panel.alert(problemOf([m]) ?? `${modelName(m)} didn't wake up; still playing ${modelName(choice[stuck[0]])}. Pick it again to retry.`, `model:${m}`);
+          }
+        }
+        adopt();
+      });
+    }
+    adopt();
+  };
+  const picking: ModelPicking = {
+    options: modelOptions(me),
+    choice: () => wanted,
+    onChange: (next) => {
+      wanted = next;
+      saveChoice(next);
+      panel.syncModels();
+      if (!started) choice = { ...next }; // Play waits for them
+      warmPlayed();
+    },
+  };
   let stats = new GameStats();
   // One scheduler per game: answers still in flight from a restarted game reach its old scheduler and are ignored.
   // They share one in-flight counter, so restarting can't stack up more concurrent (billed) requests.
@@ -107,9 +227,11 @@ if (rec) {
       transport,
       slots,
       actors: jevActors,
+      modelFor: (actor) => requestModel(choice, actor, defaultModel),
       now: () => clockMs,
       onEvent: (e) => {
         if (gameStats !== stats) return;
+        if (e.type === 'call' && e.model) warming.touch(e.model === 'jev-1.13.0' ? DEFAULT_MODEL : e.model);
         panel.handle(e);
         stats.onSchedulerEvent(e);
         // A request still in flight at game over reports afterwards; keep the card's numbers complete.
@@ -117,45 +239,122 @@ if (rec) {
       },
     });
   let scheduler = newScheduler(stats);
-  // jev plays one side; the other side's characters follow the scripted rules.
+  // The AI plays one side; the other side's characters follow the scripted rules.
   const controls: Controls = {
     decide: (point, s) => (jevActors(s).includes(point.actor) ? scheduler.decide(point, s) : greedyChoice(s, point, optionFeatures(s, point))),
   };
-  // Nothing runs, and no jev call is made, until the player presses Play.
+  // No live game runs until the player presses Play in the card. Picking a model there does send its warm-up (one
+  // tiny call, about $0.000001) right away, so it is likely awake by the time Play is pressed.
   let started = false;
   let gameOverShown = false;
-  const begin = (): void => {
-    started = true;
-    selectPlayMode = null;
-    restartBtn.disabled = false;
-    overlayAction = null;
-    hideOverlay(overlayEl);
+  let playCard: ReturnType<typeof showPlay> | null = null;
+  /** The card whose Play is waiting for models to wake; closing that card cancels the start. */
+  let waitingFor: ReturnType<typeof showPlay> | null = null;
+  /** The card's Play: wake the chosen models first (a few seconds when one has been idle), then start. */
+  const play = (): void => {
+    const card = playCard;
+    if (started || !card || waitingFor === card) return;
+    waitingFor = card;
+    void warming
+      .warmAll(playedModels, (cold) => card.busy(`Waking up ${cold.map(modelName).join(' and ')}…`))
+      .then((failed) => {
+        if (waitingFor === card) waitingFor = null;
+        if (playCard !== card) return; // closed while waking: stay on the demo, start nothing
+        card.busy(null);
+        if (failed.length) {
+          const names = failed.map(modelName).join(' and ');
+          return card.note(problemOf(failed) ?? `${names} didn't wake up in time. Press Play to try again, or pick another model.`);
+        }
+        choice = { ...wanted };
+        newGame();
+      });
   };
-
-  const setPacmanControl = (control: 'jev' | 'keyboard'): void => {
-    state.pacmanControl = control;
-    state.keyDir = null;
-    toggleBtn.textContent = `Pac-Man: ${control}`;
-    toggleBtn.setAttribute('aria-pressed', String(control === 'jev'));
-    selectPlayMode?.(control);
-  };
-  const togglePacman = (): void => setPacmanControl(state.pacmanControl === 'jev' ? 'keyboard' : 'jev');
-  const restart = (): void => {
-    if (!started) return; // Restart / R must not skip the Play card
-    state = createGame({ pacmanControl: state.pacmanControl });
+  /** A fresh live game (the first one ends the demo). */
+  const newGame = (): void => {
+    if (demo) endDemo();
+    state = createGame({ pacmanControl: liveControl });
     scheduler.reset();
     stats = new GameStats();
     scheduler = newScheduler(stats);
-    panel = new Panel(panelEl);
+    panel = new Panel(panelEl, { models: picking });
+    panel.enableModelPickers();
     gameOverShown = false;
-    paused = false;
-    pauseBtn.textContent = 'Pause';
-    begin();
+    // A game that finished waking while the tab was hidden starts paused (Resume then re-checks the models).
+    paused = document.hidden;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    started = true;
+    playCard = null;
+    overlayAction = null;
+    closeAction = null;
+    hideOverlay(overlayEl);
   };
-  restartBtn.disabled = true;
-  const playCard = showPlay(overlayEl, me, { mode: state.pacmanControl, onSelect: setPacmanControl, onPlay: begin });
-  overlayAction = playCard.action;
-  selectPlayMode = playCard.select;
+
+  let switching = false;
+  const setPacmanControl = (control: 'jev' | 'keyboard'): void => {
+    if (switching) return;
+    const apply = () => {
+      liveControl = control;
+      if (started) {
+        state.pacmanControl = control;
+        state.keyDir = null;
+        panel.clearAlert('switch');
+      }
+      toggleBtn.textContent = `Pac-Man: ${control === 'jev' ? 'AI' : 'you'}`;
+      toggleBtn.setAttribute('aria-pressed', String(control === 'jev'));
+      playCard?.select(control);
+      if (started) warmPlayed();
+    };
+    if (!started) return apply();
+    // Mid-game: the side that takes over keeps waiting for its models; the current side plays on meanwhile.
+    const incoming = [...new Set(jevActors({ pacmanControl: control } as GameState).map((id) => wanted[id]))];
+    if (incoming.every((m) => warming.isWarm(m))) return apply();
+    switching = true;
+    toggleBtn.textContent = 'Waking up…';
+    void warming.warmAll(() => incoming, () => {}).then((failed) => {
+      switching = false;
+      if (failed.length) {
+        // The current side plays on; say why the switch didn't happen.
+        toggleBtn.textContent = `Pac-Man: ${liveControl === 'jev' ? 'AI' : 'you'}`;
+        panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the sides didn't switch. Press J to try again.`, 'switch');
+        return;
+      }
+      adopt();
+      apply();
+    });
+  };
+  const togglePacman = (): void => {
+    if (!started && !playCard) return; // J on the demo: nothing to switch yet
+    setPacmanControl(liveControl === 'jev' ? 'keyboard' : 'jev');
+  };
+  let restarting = false;
+  /** Restart / Play again (never skips the Play card): wake models that went cold on the game-over screen first. */
+  const restart = (): void => {
+    if (!started || restarting) return;
+    restarting = true;
+    void warming.warmAll(playedModels, () => {}).then((failed) => {
+      restarting = false;
+      if (failed.length) {
+        // Stay where we are (the game-over card, or the game) rather than start on a model that isn't there.
+        panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the game didn't restart. Try again, or pick another model on the cards.`, 'restart');
+        return;
+      }
+      adopt();
+      newGame();
+    });
+  };
+  openPlay = () => {
+    if (started || playCard) return;
+    playCta.hidden = true;
+    playCard = showPlay(overlayEl, me, {
+      mode: liveControl,
+      onSelect: setPacmanControl,
+      onPlay: () => play(),
+      models: picking,
+      onClose: demo ? () => ((playCard = null), closePlay()) : undefined,
+    });
+    overlayAction = playCard.action;
+    closeAction = demo ? () => ((playCard = null), closePlay()) : null;
+  };
   toggleBtn.addEventListener('click', togglePacman);
   restartBtn.addEventListener('click', restart);
   speedIn.addEventListener('input', () => {
@@ -163,11 +362,28 @@ if (rec) {
     speedOut.textContent = `${speed.toFixed(2)}×`;
   });
   keyActions.set('j', togglePacman).set('r', restart);
-  steer = (dir) => {
-    state.keyDir = dir;
+  // A hidden tab pauses a live game (and the browser stops the clock anyway); resuming wakes the models first.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && started && !paused && overlayEl.hidden) {
+      paused = true;
+      pauseBtn.textContent = 'Resume';
+    }
+  });
+  beforeResume = async () => {
+    if (!started) return true;
+    const failed = await warming.warmAll(playedModels, () => {});
+    if (failed.length) {
+      panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the game stays paused. Press Resume to try again.`, 'resume');
+      return false;
+    }
+    panel.clearAlert('resume');
+    adopt();
+    return true;
   };
-  tick = (dt) => {
-    if (!started) return;
+  steer = (dir) => {
+    if (started) state.keyDir = dir;
+  };
+  const liveTick = (dt: number) => {
     clockMs += dt * 1000;
     scheduler.update(state);
     stats.beforeStep(state);
@@ -179,8 +395,28 @@ if (rec) {
       showGameOver(overlayEl, stats.summary(state), restart);
     }
   };
+  const demoTick = (dt: number) => {
+    for (const e of demo!.advance(dt)) panel.handle(e);
+    state = demo!.state;
+  };
+  // One tick for both phases: the demo until the first live game, then the live game.
+  tick = (dt) => (started ? liveTick(dt) : demo ? demoTick(dt) : undefined);
 }
-showAccount({ ...account, notice: accountNotice(me, authError, Boolean(rec)) });
+
+playCta.addEventListener('click', () => openPlay());
+if (rec) {
+  const both = tick;
+  startDemo(rec);
+  if (me.mode !== 'none') tick = both; // signed in, one tick plays the demo until a live game starts
+  overlayAction = openPlay;
+  // From "Watch Clef play" on the leaderboard: straight to the Play card, with that model picked.
+  if (new URLSearchParams(location.search).has('pacman')) openPlay();
+} else {
+  // No recording to show: open the card straight away, as before.
+  for (const control of LIVE_CONTROLS) control.disabled = me.mode === 'none';
+  openPlay();
+}
+showAccount({ ...account, notice: accountNotice(me, authError, me.mode === 'none' && Boolean(rec)) });
 
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || typeof e.key !== 'string') return;
@@ -199,6 +435,10 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === ' ' || e.key === 'Enter') && overlayAction && !onControl) {
     e.preventDefault();
     overlayAction();
+    return;
+  }
+  if (e.key === 'Escape' && closeAction) {
+    closeAction();
     return;
   }
   keyActions.get(e.key.toLowerCase())?.();
