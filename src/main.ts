@@ -88,12 +88,16 @@ const hud = { score: $('#score'), level: $('#level'), lives: $('#lives'), fruit:
 /** Set by a live game: wakes the models that play (they doze off during a long pause); false keeps the game paused. */
 let beforeResume: (() => Promise<boolean>) | null = null;
 let resuming = false;
+/** Which live game is running; a slow callback (Resume, Play again, a side switch) from an older one does nothing. */
+let gameId = 0;
 function togglePause(): void {
   if (!overlayEl.hidden || resuming) return; // nothing is running behind the Play / game-over card
   if (paused && beforeResume) {
     resuming = true;
     pauseBtn.textContent = 'Waking up…';
+    const id = gameId;
     void beforeResume().then((ok) => {
+      if (id !== gameId) return; // that game was restarted meanwhile
       resuming = false;
       paused = !ok || document.hidden;
       pauseBtn.textContent = paused ? 'Resume' : 'Pause';
@@ -121,11 +125,8 @@ function startDemo(r: NonNullable<typeof rec>): void {
   demo = new DemoPlayer(r, { onLoop: () => (panel = new Panel(panelEl, { caption: DEMO_CAPTION })) });
   state = demo.state;
   panel = new Panel(panelEl, { caption: DEMO_CAPTION });
-  for (const control of LIVE_CONTROLS) {
-    control.disabled = true;
-    control.title = 'Press Play to play live';
-  }
-  speedIn.closest('label')!.hidden = true;
+  // Controls that only mean something in a live game stay out of the way until one starts.
+  for (const control of LIVE_CONTROLS) (control.closest('label') ?? control).hidden = true;
   help.textContent = 'Recorded game · press Play (or Space) to play live';
   playCta.hidden = false;
   tick = (dt) => {
@@ -138,20 +139,16 @@ function startDemo(r: NonNullable<typeof rec>): void {
 }
 function endDemo(): void {
   demo = null;
-  for (const control of LIVE_CONTROLS) {
-    control.disabled = false;
-    control.title = '';
-  }
-  speedIn.closest('label')!.hidden = false;
+  for (const control of LIVE_CONTROLS) (control.closest('label') ?? control).hidden = false;
   help.textContent = 'Arrows/WASD or swipe steer when you play Pac-Man · J: Pac-Man to the AI or back · P pause · R restart';
   playCta.hidden = true;
 }
 
 // The leaderboard, to compare a game with (loaded in the background; a game over before it arrives just skips it).
 let board: Leaderboard | null = null;
-void fetch('/leaderboard.json')
+const boardLoaded = fetch('/leaderboard.json')
   .then((r) => (r.ok ? (r.json() as Promise<Leaderboard>) : null))
-  .then((b) => (board = b))
+  .then((b) => void (board = b))
   .catch(() => {});
 const SHARE_URL = 'https://jevman.apps.chadda.se';
 const BEST_KEY = 'jevman.best';
@@ -334,7 +331,7 @@ if (me.mode === 'none') {
         if (e.type === 'decision') thinking.add(e.decision, performance.now());
         stats.onSchedulerEvent(e);
         // A request still in flight at game over reports afterwards; keep the card's numbers complete.
-        if (gameOverShown && !overlayEl.hidden) showGameOver(overlayEl, stats.summary(state), restart, gameOverExtra);
+        if (gameOverShown && !overlayEl.hidden) showGameOver(overlayEl, stats.summary(state), playAgain, gameOverExtra);
       },
     });
   let scheduler = newScheduler(stats);
@@ -369,7 +366,15 @@ if (me.mode === 'none') {
       });
   };
   /** A fresh live game (the first one ends the demo). */
+  /** Ends whatever was pending for the game before (a J switch, Resume, Play again): their callbacks now do nothing. */
+  const retireGame = (): void => {
+    gameId += 1;
+    switching = false;
+    resuming = false;
+    restarting = false;
+  };
   const newGame = (): void => {
+    retireGame();
     if (demo) endDemo();
     if (!canUseAI) {
       toggleBtn.disabled = true; // the classic game only, until signing in
@@ -430,7 +435,9 @@ if (me.mode === 'none') {
     if (incoming.every((m) => warming.isWarm(m))) return apply();
     switching = true;
     toggleBtn.textContent = 'Waking up…';
+    const id = gameId;
     void warming.warmAll(() => incoming, () => {}).then((failed) => {
+      if (id !== gameId) return; // Restart cancelled this switch
       switching = false;
       if (failed.length) {
         // The current side plays on; say why the switch didn't happen.
@@ -448,11 +455,13 @@ if (me.mode === 'none') {
     setMode({ ...liveMode, pacman: liveMode.pacman === 'ai' ? 'you' : 'ai' });
   };
   let restarting = false;
-  /** Restart / Play again (never skips the Play card): wake models that went cold on the game-over screen first. */
-  const restart = (): void => {
+  /** Play again on the game-over card: the same game again, waking models that went cold on that card first. */
+  const playAgain = (): void => {
     if (!started || restarting) return;
     restarting = true;
+    const id = gameId;
     void warming.warmAll(playedModels, () => {}).then((failed) => {
+      if (id !== gameId) return; // Restart (and maybe another game) came first; their flags are their own
       restarting = false;
       if (failed.length) {
         // Stay where we are (the game-over card, or the game) rather than start on a model that isn't there.
@@ -463,6 +472,22 @@ if (me.mode === 'none') {
       newGame();
     });
   };
+  /** Restart (the button, R): end this game and pick what to play next in the Play card. */
+  const restart = (): void => {
+    // Restart wins over a Play again or a J switch still waking models: both check for it when they finish.
+    if (!started) return;
+    retireGame();
+    showToggle(liveMode);
+    started = false; // nothing runs (or is billed) behind the card
+    paused = false;
+    // Retire the old game: answers still in flight reach its scheduler and stats, not the card.
+    gameOverShown = false;
+    scheduler.reset();
+    stats = new GameStats();
+    scheduler = newScheduler(stats);
+    pauseBtn.textContent = 'Pause';
+    openPlay();
+  };
   openPlay = () => {
     if (started || playCard) return;
     playCta.hidden = true;
@@ -471,11 +496,14 @@ if (me.mode === 'none') {
       onSelect: setMode,
       onPlay: () => play(),
       models: picking,
+      averages: () => board?.entries,
       onClose: demo ? () => ((playCard = null), closePlay()) : undefined,
     });
     overlayAction = playCard.action;
     closeAction = demo ? () => ((playCard = null), closePlay()) : null;
   };
+  // A card opened before the leaderboard arrived (a ?pacman= link) shows the model's average once it does.
+  void boardLoaded.then(() => playCard?.select(liveMode));
   toggleBtn.addEventListener('click', togglePacman);
   restartBtn.addEventListener('click', restart);
   speedIn.addEventListener('input', () => {
@@ -493,7 +521,9 @@ if (me.mode === 'none') {
   });
   beforeResume = async () => {
     if (!started) return true;
+    const id = gameId;
     const failed = await warming.warmAll(playedModels, () => {});
+    if (id !== gameId) return false; // restarted meanwhile: nothing here is about the new game
     if (failed.length) {
       panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the game stays paused. Press Resume to try again.`, 'resume');
       return false;
@@ -516,9 +546,9 @@ if (me.mode === 'none') {
     for (const cue of cuesBetween(heard, state)) sound.play(cue);
     if (state.status === 'gameover' && !gameOverShown) {
       gameOverShown = true;
-      overlayAction = restart;
+      overlayAction = playAgain;
       gameOverExtra = resultOf(state.score);
-      showGameOver(overlayEl, stats.summary(state), restart, gameOverExtra);
+      showGameOver(overlayEl, stats.summary(state), playAgain, gameOverExtra);
     }
   };
   const demoTick = (dt: number) => {
