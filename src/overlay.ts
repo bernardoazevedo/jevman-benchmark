@@ -69,10 +69,11 @@ export function hideOverlay(root: HTMLElement): void {
  * Before a live game: nothing runs (and nothing is billed) until the player presses Play. Returns what
  * Space/Enter should do. Without any key (signed out, demo unavailable) it offers sign-in instead.
  */
-export type PlayMode = 'jev' | 'keyboard';
+/** jev: the AI plays Pac-Man. keyboard: you against AI ghosts. classic: you against the scripted ghosts (free, no AI). */
+export type PlayMode = 'jev' | 'keyboard' | 'classic';
 
 export interface PlayCard {
-  /** What Space/Enter does: play, or sign in. */
+  /** What Space/Enter does: play. */
   action: () => void;
   /** Show `mode` as chosen (e.g. after J was pressed). */
   select: (mode: PlayMode) => void;
@@ -82,16 +83,22 @@ export interface PlayCard {
   note: (text: string | null) => void;
 }
 
+const MODES: Record<PlayMode, [title: string, hint: string, text: string]> = {
+  jev: ['Watch AI play', 'default', 'A decision model steers Pac-Man; the ghosts follow the classic arcade rules.'],
+  keyboard: ['Play against AI', 'you steer', 'You steer Pac-Man (arrows, WASD or swipe) and decision models steer the four ghosts.'],
+  classic: ['Beat the AI', 'free', 'You against the classic ghosts, the same game the AIs played on the leaderboard. See which AIs you beat.'],
+};
+
 /**
- * The card before the first game. Signed in (or with a local key) the player picks a mode, watching jev play Pac-Man
- * by default, and `onSelect` reports each pick so the game can show it; `onPlay` starts the game.
+ * The card before a live game: pick the mode (and models), then Play. Signed out, only the classic game can be played
+ * (no AI, nothing billed); the AI modes ask to sign in.
  */
 export function showPlay(
   root: HTMLElement,
   me: Me,
   opts: { mode: PlayMode; onSelect: (mode: PlayMode) => void; onPlay: () => void; models?: ModelPicking; onClose?: () => void },
 ): PlayCard {
-  const card = el('div', undefined, 'card');
+  const card = el('div', undefined, 'card wide');
   if (opts.onClose) {
     // Back to the recorded demo playing behind the card.
     const close = el('button', '×', 'close');
@@ -100,66 +107,74 @@ export function showPlay(
     close.addEventListener('click', opts.onClose);
     card.append(close);
   }
-  if (me.mode === 'none') {
-    card.append(el('h2', 'Sign in to play'));
-    const button = el('button', 'Sign in with Opper', 'primary');
-    if (me.loginAvailable) {
-      card.append(el('p', 'Sign in with Opper to let the AI play live; calls bill your own Opper wallet.'));
-      button.addEventListener('click', signIn);
-    } else {
-      // Login with Opper isn't configured here (its route answers 503): don't offer a broken action.
-      card.append(el('p', 'This server has no API key and Login with Opper is not configured. Clone the repo and add your own key to play.'));
-      button.disabled = true;
-    }
-    card.append(button);
-    show(root, card, button);
-    return { action: me.loginAvailable ? signIn : () => {}, select: () => {}, busy: () => {}, note: () => {} };
-  }
-  card.classList.add('wide');
-  card.append(el('h2', 'Ready when you are'));
-  card.append(el('p', 'A decision model plays one side at a time, so every choice in the decision panel is its own.'));
+  const signedOut = me.mode === 'none';
+  card.append(el('h2', signedOut ? 'Can you beat the AI?' : 'Ready when you are'));
+  card.append(
+    el(
+      'p',
+      signedOut
+        ? 'Play Pac-Man against the classic ghosts, free and without signing in, and see which of the AIs on the leaderboard you beat.'
+        : 'A decision model plays one side at a time, so every choice in the decision panel is its own.',
+    ),
+  );
+  const offered: PlayMode[] = signedOut ? ['classic'] : ['jev', 'keyboard', 'classic'];
   const modes = el('div', undefined, 'modes');
   modes.setAttribute('role', 'radiogroup');
   modes.setAttribute('aria-label', 'Mode');
-  const choices: [PlayMode, string, string, string][] = [
-    ['jev', 'Watch AI play', 'default', 'A decision model steers Pac-Man; the ghosts follow the classic arcade rules.'],
-    ['keyboard', 'Play against AI', 'you steer', 'You steer Pac-Man (arrows or WASD) and decision models steer the four ghosts.'],
-  ];
   const play = el('button', undefined, 'primary');
   const buttons = new Map<PlayMode, HTMLButtonElement>();
   const pick = el('div', undefined, 'model-pick');
   const select = (mode: PlayMode) => {
     for (const [m, b] of buttons) b.setAttribute('aria-checked', String(m === mode));
-    if (opts.models) renderModelPick(pick, mode === 'jev', opts.models);
+    pick.hidden = mode === 'classic';
+    if (opts.models && mode !== 'classic') renderModelPick(pick, mode === 'jev', opts.models);
   };
-  for (const [mode, title, hint, text] of choices) {
-    const b = el('button', undefined, 'mode');
-    b.type = 'button';
-    b.setAttribute('role', 'radio');
-    const head = el('span', title, 'title');
-    head.append(el('span', hint, 'hint'));
-    b.append(head, el('span', text, 'text'));
-    b.addEventListener('click', () => {
-      select(mode);
-      opts.onSelect(mode);
-      play.focus({ preventScroll: true }); // so Space/Enter now starts the game
-    });
-    buttons.set(mode, b);
-    modes.append(b);
+  if (offered.length > 1) {
+    for (const mode of offered) {
+      const [title, hint, text] = MODES[mode];
+      const b = el('button', undefined, 'mode');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      const head = el('span', title, 'title');
+      head.append(el('span', hint, 'hint'));
+      b.append(head, el('span', text, 'text'));
+      b.addEventListener('click', () => {
+        select(mode);
+        opts.onSelect(mode);
+        play.focus({ preventScroll: true }); // so Space/Enter now starts the game
+      });
+      buttons.set(mode, b);
+      modes.append(b);
+    }
+    card.append(modes);
   }
-  select(opts.mode);
-  card.append(modes);
-  if (opts.models) card.append(pick);
-  card.append(el('p', 'Switch sides any time with J or the Pac-Man button, and models on the panel cards.', 'muted small'));
-  card.append(el('p', me.mode === 'player'
-    ? 'A game usually costs about $0.01 from your Opper wallet (Clef about $0.02), a little more for the ghosts.'
-    : me.devProvider === 'typesafe' ? 'Calls use your TypeSafe key from .env.' : 'Calls use the local key from .env.', 'muted'));
+  select(offered.includes(opts.mode) ? opts.mode : offered[0]);
+  if (opts.models && !signedOut) card.append(pick);
+  if (!signedOut) card.append(el('p', 'Switch sides any time with J or the Pac-Man button, and models on the panel cards.', 'muted small'));
+  if (!signedOut) {
+    card.append(el('p', me.mode === 'player'
+      ? 'A game usually costs about $0.01 from your Opper wallet (Clef about $0.02); Beat the AI is free.'
+      : me.devProvider === 'typesafe' ? 'Calls use your TypeSafe key from .env.' : 'Calls use the local key from .env.', 'muted'));
+  }
   const icon = el('span', '▶ ');
   icon.setAttribute('aria-hidden', 'true');
-  const label = el('span', 'Play');
+  const label = el('span', signedOut ? 'Play free' : 'Play');
   play.append(icon, label);
   play.addEventListener('click', opts.onPlay);
   card.append(play, el('p', 'or press Space / Enter', 'muted small'));
+  if (signedOut) {
+    const more = el('div', undefined, 'signin-more');
+    more.append(el('p', 'Want to watch the AI play, or face AI ghosts? Calls bill your own Opper wallet.', 'muted small'));
+    const signin = el('button', 'Sign in with Opper', 'signin');
+    if (me.loginAvailable) signin.addEventListener('click', signIn);
+    else {
+      // Login with Opper isn't configured here (its route answers 503): don't offer a broken action.
+      signin.disabled = true;
+      signin.title = 'Login with Opper is not configured on this server';
+    }
+    more.append(signin);
+    card.append(more);
+  }
   show(root, card, play);
   // aria-disabled, not disabled: the button keeps focus while models wake, and repeat presses are ignored by onPlay.
   const status = el('p', undefined, 'muted small');
@@ -167,7 +182,7 @@ export function showPlay(
   const busy = (note: string | null) => {
     play.toggleAttribute('aria-disabled', note !== null);
     play.setAttribute('aria-busy', String(note !== null));
-    label.textContent = note ?? 'Play';
+    label.textContent = note ?? (signedOut ? 'Play free' : 'Play');
     status.textContent = note ?? '';
   };
   card.append(status);
@@ -177,13 +192,49 @@ export function showPlay(
   return { action: opts.onPlay, select, busy, note };
 }
 
-export function showGameOver(root: HTMLElement, summary: GameSummary, onPlayAgain: () => void): void {
+/** The extras a game-over card can show: how you did against the AIs, your best, or how the AI did against its average. */
+export interface GameOverExtra {
+  versus?: string;
+  newBest?: boolean;
+  best?: number;
+  aiNote?: string;
+  /** Shares the result (system share sheet, else the clipboard); resolves to what happened. */
+  share?: () => Promise<'shared' | 'copied' | 'failed' | 'cancelled'>;
+}
+
+export function showGameOver(root: HTMLElement, summary: GameSummary, onPlayAgain: () => void, extra: GameOverExtra = {}): void {
   const rows = summaryRows(summary);
   const card = el('div', undefined, 'card wide');
   card.append(el('h2', 'Game over'));
-  card.append(el('p', `${summary.score} points`, 'score'));
+  card.append(el('p', `${summary.score.toLocaleString('en-US')} points`, 'score'));
+  if (extra.newBest) card.append(el('p', '🎉 New personal best!', 'best'));
+  else if (extra.best) card.append(el('p', `Your best: ${extra.best.toLocaleString('en-US')}`, 'muted small'));
+  if (extra.versus || extra.aiNote) {
+    const box = el('section', undefined, 'versus');
+    box.append(el('p', extra.versus ?? extra.aiNote));
+    const actions = el('div', undefined, 'versus-actions');
+    if (extra.share) {
+      const share = el('button', 'Share your score', 'signin');
+      share.type = 'button';
+      share.addEventListener('click', () => {
+        void extra.share!().then((r) => {
+          if (r === 'cancelled') return; // the share sheet was closed: nothing to report
+          share.textContent = r === 'copied' ? 'Copied! Paste it anywhere' : r === 'shared' ? 'Shared!' : 'Could not share';
+        });
+      });
+      actions.append(share);
+    }
+    const board = el('a', 'Leaderboard →');
+    board.href = '/leaderboard';
+    actions.append(board);
+    box.append(actions);
+    card.append(box);
+  }
   const grid = el('div', undefined, 'grid');
-  grid.append(table('This game', rows.game), table('Decisions', rows.jev));
+  grid.append(table('This game', rows.game));
+  // A game with no AI (the classic game) has no decisions to show.
+  if (summary.jev.calls || summary.jev.decisions) grid.append(table('Decisions', rows.jev));
+  else grid.classList.add('single');
   card.append(grid);
   if (summary.deaths.length) {
     const box = el('section', undefined, 'deaths');

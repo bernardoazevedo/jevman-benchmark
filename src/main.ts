@@ -1,7 +1,9 @@
 import './style.css';
 import { accountNotice, fetchMe, renderAccount, takeAuthError, walletNotice, type AccountView } from './auth';
 import { DemoPlayer, loadRecording } from './demo';
-import { hideOverlay, showGameOver, showPlay } from './overlay';
+import { hideOverlay, showGameOver, showPlay, type GameOverExtra, type PlayMode } from './overlay';
+import { shareText, versus, versusLine } from './versus';
+import type { Leaderboard } from '../shared/leaderboard';
 import { Panel } from './panel';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { greedyChoice, optionFeatures } from './features';
@@ -9,6 +11,9 @@ import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { GameStats } from './stats';
 import { createHttpTransport, warmUp, type TransportHooks } from './transport';
+import { attachTouch } from './touch';
+import { cuesBetween, snapshot, Sound } from './sound';
+import { Thinking } from './thinking';
 import { initialChoice, loadStoredChoice, modelOptions, requestModel, saveChoice, type ModelChoice } from './choice';
 import type { ModelPicking } from './picker';
 import { effectiveChoice, ModelWarming } from './warming';
@@ -34,6 +39,8 @@ canvas.width = state.maze.width * TILE;
 canvas.height = state.maze.height * TILE;
 const ctx = canvas.getContext('2d')!;
 const panelEl = $('#panel');
+/** The models' odds drawn on the board at each junction. */
+const thinking = new Thinking();
 let panel = new Panel(panelEl);
 
 const accountEl = $('#account');
@@ -54,6 +61,27 @@ const speedIn = $<HTMLInputElement>('#speed');
 const speedOut = $('#speed-out');
 const restartBtn = $<HTMLButtonElement>('#restart');
 const playCta = $<HTMLButtonElement>('#play-cta');
+const muteBtn = $<HTMLButtonElement>('#mute');
+const sound = new Sound();
+const showSound = () => {
+  muteBtn.textContent = sound.enabled ? '🔊' : '🔇';
+  muteBtn.setAttribute('aria-pressed', String(!sound.enabled));
+  muteBtn.title = sound.enabled ? 'Mute (M)' : 'Unmute (M)';
+};
+showSound();
+const toggleSound = () => {
+  sound.toggle();
+  sound.unlock();
+  showSound();
+};
+muteBtn.addEventListener('click', toggleSound);
+// Browsers allow audio only after a gesture; any click or key unlocks it.
+// (iOS only counts the end of a tap as a gesture, hence pointerup/touchend/click as well as pointerdown.)
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => sound.unlock(), { passive: true });
+const dpad = $('#dpad');
+const boardEl = $('.board');
+/** The on-screen pad shows on touch screens while the player steers Pac-Man. */
+const touchScreen = matchMedia('(pointer: coarse)').matches;
 const help = $('.help');
 const hud = { score: $('#score'), level: $('#level'), lives: $('#lives'), fruit: $('#fruit-hud') };
 
@@ -78,7 +106,7 @@ function togglePause(): void {
 pauseBtn.addEventListener('click', togglePause);
 
 const overlayEl = $('#overlay');
-const keyActions = new Map<string, () => void>([['p', togglePause]]);
+const keyActions = new Map<string, () => void>([['p', togglePause], ['m', toggleSound]]);
 /** What Space/Enter does while an overlay is open (Play, Play again), or on the demo (open the Play card). */
 let overlayAction: (() => void) | null = null;
 /** What Escape does: close the Play card and go back to the demo. */
@@ -101,7 +129,10 @@ function startDemo(r: NonNullable<typeof rec>): void {
   help.textContent = 'Recorded game · press Play (or Space) to play live';
   playCta.hidden = false;
   tick = (dt) => {
-    for (const e of demo!.advance(dt)) panel.handle(e);
+    for (const e of demo!.advance(dt)) {
+      panel.handle(e);
+      if (e.type === 'decision') thinking.add(e.decision, performance.now());
+    }
     state = demo!.state;
   };
 }
@@ -112,8 +143,48 @@ function endDemo(): void {
     control.title = '';
   }
   speedIn.closest('label')!.hidden = false;
-  help.textContent = 'Arrows/WASD steer when you play Pac-Man · J switch sides · P pause · R restart';
+  help.textContent = 'Arrows/WASD or swipe steer when you play Pac-Man · J switch sides · P pause · R restart';
   playCta.hidden = true;
+}
+
+// The leaderboard, to compare a game with (loaded in the background; a game over before it arrives just skips it).
+let board: Leaderboard | null = null;
+void fetch('/leaderboard.json')
+  .then((r) => (r.ok ? (r.json() as Promise<Leaderboard>) : null))
+  .then((b) => (board = b))
+  .catch(() => {});
+const SHARE_URL = 'https://jevman.apps.chadda.se';
+const BEST_KEY = 'jevman.best';
+const readBest = (): number => {
+  try {
+    return Number(localStorage.getItem(BEST_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+};
+const writeBest = (score: number) => {
+  try {
+    localStorage.setItem(BEST_KEY, String(score));
+  } catch {
+    // not remembered
+  }
+};
+/** The system share sheet on phones (where people share from), else the clipboard. */
+async function shareScore(text: string): Promise<'shared' | 'copied' | 'failed' | 'cancelled'> {
+  if (navigator.share && touchScreen) {
+    try {
+      await navigator.share({ text });
+      return 'shared';
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return 'cancelled'; // the player closed the sheet
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  } catch {
+    return 'failed';
+  }
 }
 
 /** Opens the Play card (or the sign-in card); returns to the demo when closed. */
@@ -134,14 +205,9 @@ if (me.mode === 'none') {
     const stored = loadStoredChoice();
     saveChoice({ ...(stored && typeof stored === 'object' ? stored : {}), pacman: linked } as ModelChoice);
   }
-  // Signed out: the demo, and Play offers sign-in.
-  openPlay = () => {
-    playCta.hidden = true;
-    const card = showPlay(overlayEl, me, { mode: 'jev', onSelect: () => {}, onPlay: () => {}, onClose: rec ? closePlay : undefined });
-    overlayAction = card.action;
-    closeAction = rec ? closePlay : null;
-  };
-} else {
+}
+// The live game, for everyone: signed out it is the classic game only (the player against the scripted ghosts, no AI).
+{
   let signedOutShown = false;
   let walletShown = false;
   const hooks: TransportHooks = {
@@ -158,8 +224,41 @@ if (me.mode === 'none') {
   };
   const transport = createHttpTransport(hooks);
   // Who steers Pac-Man in the next live game (the demo's own state is a recording).
-  let liveControl: 'jev' | 'keyboard' = 'jev';
-  const played = () => jevActors(started ? state : ({ pacmanControl: liveControl } as GameState));
+  const canUseAI = me.mode !== 'none';
+  let liveMode: PlayMode = canUseAI ? 'jev' : 'classic';
+  /** The human mode J returns to from watching the AI. */
+  let lastHumanMode: PlayMode = 'keyboard';
+  const sides = (m: PlayMode) => ({ pacmanControl: m === 'jev' ? ('jev' as const) : ('keyboard' as const), ghostsByAI: m === 'keyboard' });
+  const played = () => jevActors(started ? state : sides(liveMode));
+  /** Whether this game has been the classic game from the start, so its score compares with the leaderboard. */
+  let classicThroughout = false;
+  /** Whether the AI has played Pac-Man the whole game, on one model, so it compares with that model's average. */
+  let aiPacmanThroughout: string | null = null;
+  let gameOverExtra: GameOverExtra = {};
+  /** Whether the speed slider was below 1× at any point this game: the leaderboard ran at full speed. */
+  let slowed = false;
+  /** The game-over extras: you against the AIs (classic game), or the AI against its leaderboard average. */
+  const resultOf = (score: number): GameOverExtra => {
+    if (slowed && (classicThroughout || aiPacmanThroughout !== null)) {
+      return { aiNote: 'Played below full speed, so this game is not compared with the leaderboard (the AIs played at 1×).' };
+    }
+    if (classicThroughout) {
+      const best = readBest();
+      const newBest = score > best;
+      if (newBest) writeBest(score);
+      if (!board?.entries.length) return { newBest, best };
+      const v = versus(board, score);
+      const text = shareText(v, SHARE_URL);
+      return { newBest, best, versus: versusLine(v), share: () => shareScore(text) };
+    }
+    const entry = aiPacmanThroughout ? board?.entries.find((e) => e.model === aiPacmanThroughout) : undefined;
+    if (entry) {
+      return {
+        aiNote: `${entry.name} scored ${score.toLocaleString('en-US')} this game; its leaderboard average is ${entry.meanScore.toLocaleString('en-US')} (there, without the game's safety check, so the model plays alone).`,
+      };
+    }
+    return {};
+  };
   // Which model plays each character: the server default until the player picks, remembered in this browser.
   const defaultModel = me.defaultModel ?? DEFAULT_MODEL;
   // `wanted` is what the player picked; `choice` is what plays. A newly picked model takes over once it is awake, so a
@@ -211,6 +310,7 @@ if (me.mode === 'none') {
     options: modelOptions(me),
     choice: () => wanted,
     onChange: (next) => {
+      if (started && next.pacman !== wanted.pacman) aiPacmanThroughout = null;
       wanted = next;
       saveChoice(next);
       panel.syncModels();
@@ -233,9 +333,10 @@ if (me.mode === 'none') {
         if (gameStats !== stats) return;
         if (e.type === 'call' && e.model) warming.touch(e.model === 'jev-1.13.0' ? DEFAULT_MODEL : e.model);
         panel.handle(e);
+        if (e.type === 'decision') thinking.add(e.decision, performance.now());
         stats.onSchedulerEvent(e);
         // A request still in flight at game over reports afterwards; keep the card's numbers complete.
-        if (gameOverShown && !overlayEl.hidden) showGameOver(overlayEl, stats.summary(state), restart);
+        if (gameOverShown && !overlayEl.hidden) showGameOver(overlayEl, stats.summary(state), restart, gameOverExtra);
       },
     });
   let scheduler = newScheduler(stats);
@@ -272,7 +373,20 @@ if (me.mode === 'none') {
   /** A fresh live game (the first one ends the demo). */
   const newGame = (): void => {
     if (demo) endDemo();
-    state = createGame({ pacmanControl: liveControl });
+    if (!canUseAI) {
+      toggleBtn.disabled = true; // the classic game only, until signing in
+      toggleBtn.title = 'Sign in with Opper to watch the AI or face AI ghosts';
+      help.textContent = 'Arrows/WASD or swipe steer · P pause · R restart · M sound';
+      if (account.kind === 'demo' || account.kind === 'signed-out') showAccount({ kind: 'free', me });
+    }
+    if (!switching) showToggle(liveMode);
+    state = createGame(sides(liveMode));
+    thinking.clear();
+    slowed = speed < 1;
+    classicThroughout = liveMode === 'classic';
+    aiPacmanThroughout = liveMode === 'jev' ? choice.pacman : null;
+    sound.play('start');
+    gameOverExtra = {};
     scheduler.reset();
     stats = new GameStats();
     scheduler = newScheduler(stats);
@@ -290,23 +404,31 @@ if (me.mode === 'none') {
   };
 
   let switching = false;
-  const setPacmanControl = (control: 'jev' | 'keyboard'): void => {
-    if (switching) return;
+  const showToggle = (m: PlayMode) => {
+    toggleBtn.textContent = `Pac-Man: ${m === 'jev' ? 'AI' : 'you'}`;
+    toggleBtn.setAttribute('aria-pressed', String(m === 'jev'));
+  };
+  const setMode = (mode: PlayMode): void => {
+    if (switching || (!canUseAI && mode !== 'classic')) return;
     const apply = () => {
-      liveControl = control;
+      if (mode !== 'jev') lastHumanMode = mode;
+      if (mode !== liveMode) {
+        classicThroughout = false;
+        aiPacmanThroughout = null;
+      }
+      liveMode = mode;
       if (started) {
-        state.pacmanControl = control;
+        Object.assign(state, sides(mode));
         state.keyDir = null;
         panel.clearAlert('switch');
       }
-      toggleBtn.textContent = `Pac-Man: ${control === 'jev' ? 'AI' : 'you'}`;
-      toggleBtn.setAttribute('aria-pressed', String(control === 'jev'));
-      playCard?.select(control);
+      showToggle(mode);
+      playCard?.select(mode);
       if (started) warmPlayed();
     };
     if (!started) return apply();
     // Mid-game: the side that takes over keeps waiting for its models; the current side plays on meanwhile.
-    const incoming = [...new Set(jevActors({ pacmanControl: control } as GameState).map((id) => wanted[id]))];
+    const incoming = [...new Set(jevActors(sides(mode)).map((id) => wanted[id]))];
     if (incoming.every((m) => warming.isWarm(m))) return apply();
     switching = true;
     toggleBtn.textContent = 'Waking up…';
@@ -314,7 +436,7 @@ if (me.mode === 'none') {
       switching = false;
       if (failed.length) {
         // The current side plays on; say why the switch didn't happen.
-        toggleBtn.textContent = `Pac-Man: ${liveControl === 'jev' ? 'AI' : 'you'}`;
+        showToggle(liveMode);
         panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the sides didn't switch. Press J to try again.`, 'switch');
         return;
       }
@@ -323,8 +445,8 @@ if (me.mode === 'none') {
     });
   };
   const togglePacman = (): void => {
-    if (!started && !playCard) return; // J on the demo: nothing to switch yet
-    setPacmanControl(liveControl === 'jev' ? 'keyboard' : 'jev');
+    if (!canUseAI || (!started && !playCard)) return; // signed out (classic only), or J on the demo
+    setMode(liveMode === 'jev' ? lastHumanMode : 'jev');
   };
   let restarting = false;
   /** Restart / Play again (never skips the Play card): wake models that went cold on the game-over screen first. */
@@ -346,8 +468,8 @@ if (me.mode === 'none') {
     if (started || playCard) return;
     playCta.hidden = true;
     playCard = showPlay(overlayEl, me, {
-      mode: liveControl,
-      onSelect: setPacmanControl,
+      mode: liveMode,
+      onSelect: setMode,
       onPlay: () => play(),
       models: picking,
       onClose: demo ? () => ((playCard = null), closePlay()) : undefined,
@@ -360,6 +482,7 @@ if (me.mode === 'none') {
   speedIn.addEventListener('input', () => {
     speed = Number(speedIn.value);
     speedOut.textContent = `${speed.toFixed(2)}×`;
+    if (speed < 1) slowed = true;
   });
   keyActions.set('j', togglePacman).set('r', restart);
   // A hidden tab pauses a live game (and the browser stops the clock anyway); resuming wakes the models first.
@@ -383,20 +506,27 @@ if (me.mode === 'none') {
   steer = (dir) => {
     if (started) state.keyDir = dir;
   };
+  attachTouch($('.board'), dpad, (dir) => steer?.(dir), () => started && state.pacmanControl === 'keyboard' && overlayEl.hidden === true);
   const liveTick = (dt: number) => {
     clockMs += dt * 1000;
     scheduler.update(state);
     stats.beforeStep(state);
+    const heard = snapshot(state);
     step(state, dt * speed, controls);
     stats.afterStep(state, dt * speed);
+    for (const cue of cuesBetween(heard, state)) sound.play(cue);
     if (state.status === 'gameover' && !gameOverShown) {
       gameOverShown = true;
       overlayAction = restart;
-      showGameOver(overlayEl, stats.summary(state), restart);
+      gameOverExtra = resultOf(state.score);
+      showGameOver(overlayEl, stats.summary(state), restart, gameOverExtra);
     }
   };
   const demoTick = (dt: number) => {
-    for (const e of demo!.advance(dt)) panel.handle(e);
+    for (const e of demo!.advance(dt)) {
+      panel.handle(e);
+      if (e.type === 'decision') thinking.add(e.decision, performance.now());
+    }
     state = demo!.state;
   };
   // One tick for both phases: the demo until the first live game, then the live game.
@@ -407,13 +537,13 @@ playCta.addEventListener('click', () => openPlay());
 if (rec) {
   const both = tick;
   startDemo(rec);
-  if (me.mode !== 'none') tick = both; // signed in, one tick plays the demo until a live game starts
+  tick = both; // one tick plays the demo until a live game starts
   overlayAction = openPlay;
   // From "Watch Clef play" on the leaderboard: straight to the Play card, with that model picked.
   if (new URLSearchParams(location.search).has('pacman')) openPlay();
 } else {
   // No recording to show: open the card straight away, as before.
-  for (const control of LIVE_CONTROLS) control.disabled = me.mode === 'none';
+  for (const control of LIVE_CONTROLS) control.disabled = false;
   openPlay();
 }
 showAccount({ ...account, notice: accountNotice(me, authError, me.mode === 'none' && Boolean(rec)) });
@@ -461,6 +591,11 @@ function frame(now: number): void {
   last = now;
   if (!paused) tick(dt);
   drawGame(ctx, state, now / 1000, paused);
+  if (state.status === 'playing') thinking.draw(ctx, now);
+  const steering = !demo && state.pacmanControl === 'keyboard' && overlayEl.hidden === true;
+  const showPad = touchScreen && steering;
+  if (dpad.hidden === showPad) dpad.hidden = !showPad;
+  boardEl.classList.toggle('steering', steering);
   panel.updateActors(state);
   updateHud();
   requestAnimationFrame(frame);
