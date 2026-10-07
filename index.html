@@ -55,7 +55,7 @@
       <!-- opper.ai's list-page hero (ListPageHero), class for class -->
       <div class="oc col">
         <section class="flex flex-col items-center justify-center text-center gap-8 pt-24 pb-10 md:pt-32 md:pb-12">
-          <p class="md:mx-auto w-fit border border-[#e8e8e8] mb-0 bg-white text-sm leading-5 px-6 py-2 rounded-full text-[#333333] font-medium">Benchmark</p>
+          <div class="hero-pac" aria-hidden="true"><span class="pac"></span><i></i><i></i><i></i></div>
           <h1 class="font-wix font-semibold text-4xl md:text-5xl text-left md:text-center">jevman: a Pac-Man benchmark for decision models</h1>
           <p class="font-wix font-medium text-left md:text-center text-lg md:text-xl">Six AI decision models play Pac-Man in real time. See how they rank, watch their games, or play against them.</p>
         </section>
@@ -84,6 +84,9 @@
               <button id="play-cta" class="play-cta" type="button" hidden>▶ Play against the AIs</button>
               <p id="notice" class="board-notice" role="status" hidden></p>
               <div id="paused" class="paused" hidden><span>II</span> Paused · click to resume</div>
+              <button id="sound" class="sound-btn" type="button" aria-pressed="true" aria-label="Sound (M)" title="Mute (M)">
+                <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" fill="currentColor" /><path class="on" d="M13.5 7a4 4 0 0 1 0 6M15.8 4.8a7 7 0 0 1 0 10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /><path class="off" d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /></svg>
+              </button>
             </div>
             <div class="dpad" id="dpad" hidden aria-label="Steer Pac-Man">
               <button type="button" data-dir="up" aria-label="Up">▲</button>
@@ -107,22 +110,21 @@
         <p class="foot">=1 means tied: those scores are within each other's margin of error.</p>
       </section>
 
+      <section id="add-model" class="section" aria-labelledby="add-model-title">
+        <div class="oc"><h2 id="add-model-title" class="font-wix font-semibold text-3xl md:text-4xl text-left md:text-center">Add your decision model</h2></div>
+        <p class="sub">Run the benchmark on your own model and send a pull request. CI replays every game you submit, and your model joins the leaderboard.</p>
+        <a class="btn-dark" href="https://github.com/opper-ai/jevman-benchmark/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Open on GitHub ↗</a>
+      </section>
+
       <section id="method" class="section" aria-labelledby="method-title">
         <div class="oc"><h2 id="method-title" class="font-wix font-semibold text-3xl md:text-4xl text-left md:text-center">Method</h2></div>
-        <div class="method">
-          <ul>
-            <li>Each model plays Pac-Man against the classic scripted ghosts until it loses three lives or 5 minutes pass. 24 games per model.</li>
-            <li>At every junction the game asks the model one question, with the maze, pellets and ghosts as state. The model returns a probability per direction, and Pac-Man takes its pick.</li>
-            <li>An answer that takes longer than 2 seconds is replaced by a simple backup rule, counted under backup moves.</li>
-            <li>Scores are means with a 95% margin of error (±2 standard errors). Models within each other's margin are tied.</li>
-            <li>Every game is recorded and replays exactly, so any result can be checked.</li>
-          </ul>
-          <div class="addcard">
-            <h3>Add your decision model</h3>
-            <p>Run the benchmark on your own model and send a pull request. CI replays every game you submit, and your model joins the leaderboard.</p>
-            <a class="btn-dark" href="https://github.com/opper-ai/jevman-benchmark/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Open on GitHub ↗</a>
-          </div>
-        </div>
+        <ul class="method">
+          <li>Each model plays Pac-Man against the classic scripted ghosts until it loses three lives or 5 minutes pass. 24 games per model.</li>
+          <li>At every junction the game asks the model one question, with the maze, pellets and ghosts as state. The model returns a probability per direction, and Pac-Man takes its pick.</li>
+          <li>An answer that takes longer than 2 seconds is replaced by a simple backup rule, counted under backup moves.</li>
+          <li>Scores are means with a 95% margin of error (±2 standard errors). Models within each other's margin are tied.</li>
+          <li>Every game is recorded and replays exactly, so any result can be checked.</li>
+        </ul>
       </section>
     </main>
 

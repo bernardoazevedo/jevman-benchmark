@@ -12,6 +12,7 @@ import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { renderLeaderboard } from './results';
 import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
+import { cuesBetween, snapshot, Sound } from './sound';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
 import { attachTouch } from './touch';
@@ -53,6 +54,22 @@ const livesEl = $('#lives');
 const fruitEl = $('#fruit');
 const pausedEl = $('#paused');
 const noticeEl = $('#notice');
+const soundBtn = $<HTMLButtonElement>('#sound');
+/** Arcade sounds, on unless the visitor muted them (remembered). Browsers keep them silent until the first click or key. */
+const sound = new Sound();
+const showSound = () => {
+  soundBtn.classList.toggle('off', !sound.enabled);
+  soundBtn.setAttribute('aria-pressed', String(sound.enabled));
+  soundBtn.title = sound.enabled ? 'Mute (M)' : 'Sound on (M)';
+};
+showSound();
+const toggleSound = () => {
+  sound.toggle();
+  sound.unlock();
+  showSound();
+};
+soundBtn.addEventListener('click', toggleSound);
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => sound.unlock(), { passive: true });
 const dpad = $('#dpad');
 const chipsEl = $('#watch-chips');
 const thinking = new Thinking();
@@ -300,6 +317,7 @@ function showRecording(): void {
         recordingT = 0;
         thinking.clear();
         log.begin(recordingSubject);
+        sound.play('start');
       },
     });
     demo = recordingPlayer;
@@ -331,6 +349,7 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   playT = 0;
   live = true;
   setPaused(document.hidden);
+  sound.play('start');
   setPlate();
   renderChips();
 }
@@ -522,9 +541,9 @@ function togglePause(): void {
   }
   setPaused(!paused);
 }
-// A click on the game pauses it, another resumes (not on its cards, the Play button or a note).
+// A click on the game pauses it, another resumes (not on its cards, the Play button, the sound button or a note).
 boardEl.addEventListener('click', (e) => {
-  if ((e.target as Element).closest('.overlay, .play-cta, .board-notice')) return;
+  if ((e.target as Element).closest('.overlay, .play-cta, .board-notice, .sound-btn')) return;
   togglePause();
 });
 playCta.addEventListener('click', openPicker);
@@ -560,6 +579,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && picker) return closePicker();
   const k = e.key.toLowerCase();
   if (k === 'p') togglePause();
+  else if (k === 'm') toggleSound();
 });
 
 // ---------- the leaderboard below ----------
@@ -591,12 +611,14 @@ void Promise.all([
 
 // ---------- the frame loop ----------
 function tick(dt: number): void {
+  const heard = snapshot(state);
   if (demo) {
     for (const e of demo.advance(dt)) {
       log.handle(e, recordingT);
       if (e.type === 'decision') thinking.add(e.decision, performance.now());
     }
     state = demo.state;
+    for (const cue of cuesBetween(heard, state)) sound.play(cue);
     if (state.status === 'playing') recordingT += dt;
     return;
   }
@@ -606,6 +628,7 @@ function tick(dt: number): void {
   stats.beforeStep(state);
   step(state, dt, controls);
   stats.afterStep(state, dt);
+  for (const cue of cuesBetween(heard, state)) sound.play(cue);
   if (state.status === 'playing') playT += dt;
   if (state.status === 'gameover') gameOver();
 }
