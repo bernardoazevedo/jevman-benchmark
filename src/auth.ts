@@ -148,10 +148,22 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: 
   return e;
 }
 
-/** Login with Opper, as on opper.ai: an outlined pill. */
+/** opper.ai's own Login and Sign up buttons (copied from the site's navbar, class for class). */
+const LOGIN_CLASS = "relative isolate items-center justify-center gap-x-2 rounded-full border font-semibold group focus:outline-none data-[focus]:outline data-[focus]:outline-2 data-[focus]:outline-offset-2 data-[focus]:outline-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 data-[disabled]:opacity-50 transition-all duration-400 text-sm sm:text-sm/6 px-[calc(theme(spacing[3.5])-1px)] py-[calc(theme(spacing[2.5])-1px)] sm:px-[calc(theme(spacing.3)-1px)] sm:py-[calc(theme(spacing[1.5])-1px)] border-foreground hover:bg-accent hover:border-accent-foreground hover:text-accent-foreground hidden xlg:inline-flex whitespace-nowrap";
+const SIGNUP_CLASS = "relative isolate inline-flex items-center justify-center gap-x-2 rounded-full font-semibold group focus:outline-none data-[focus]:outline data-[focus]:outline-2 data-[focus]:outline-offset-2 data-[focus]:outline-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 data-[disabled]:opacity-50 transition-all duration-400 text-sm sm:text-sm/6 px-[calc(theme(spacing[3.5])-1px)] py-[calc(theme(spacing[2.5])-1px)] sm:px-[calc(theme(spacing.3)-1px)] sm:py-[calc(theme(spacing[1.5])-1px)] bg-foreground border border-foreground text-background opacity-100 hover:opacity-90 whitespace-nowrap";
+const TOUCH_CLASS = "absolute left-1/2 top-1/2 size-[max(100%,2.75rem)] -translate-x-1/2 -translate-y-1/2 [@media(pointer:fine)]:hidden";
+
+function buttonFace(label: string): Node[] {
+  const touch = el('span', undefined, TOUCH_CLASS);
+  touch.setAttribute('aria-hidden', 'true');
+  return [el('span', label, 'flex items-center'), touch];
+}
+
+/** Login with Opper (this app's own sign-in), styled as opper.ai's Login. */
 function loginButton(me: Me, label = 'Login'): HTMLButtonElement {
-  const b = el('button', label, 'pill');
+  const b = el('button', undefined, LOGIN_CLASS);
   b.type = 'button';
+  b.append(...buttonFace(label));
   b.disabled = !me.loginAvailable;
   b.title = me.loginAvailable ? 'Play on your own Opper account' : 'Login with Opper is not configured on this server';
   b.addEventListener('click', signIn);
@@ -160,9 +172,29 @@ function loginButton(me: Me, label = 'Login'): HTMLButtonElement {
 
 /** Sign up goes where opper.ai's does: an Opper account. */
 function signUpLink(): HTMLAnchorElement {
-  const a = el('a', 'Sign up', 'pill dark');
+  const a = el('a', undefined, SIGNUP_CLASS);
   a.href = 'https://opper.ai/sign-up/free';
+  a.append(...buttonFace('Sign up'));
   return a;
+}
+
+/** The same choices at the foot of the phone menu, full width. */
+export function renderDrawerAccount(root: HTMLElement, view: AccountView): void {
+  const { me } = view;
+  if (view.kind === 'player') {
+    const out = el('button', `Sign out (${me.user?.name ?? me.user?.email ?? 'Opper user'})`);
+    out.type = 'button';
+    out.addEventListener('click', () => void signOut());
+    root.replaceChildren(out);
+    return;
+  }
+  const signUp = el('a', 'Sign up', 'dark');
+  signUp.href = 'https://opper.ai/sign-up/free';
+  const login = el('button', 'Login');
+  login.type = 'button';
+  login.disabled = !me.loginAvailable;
+  login.addEventListener('click', signIn);
+  root.replaceChildren(signUp, login);
 }
 
 /**

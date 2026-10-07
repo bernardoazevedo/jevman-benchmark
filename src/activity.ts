@@ -52,10 +52,20 @@ export class ActivityLog {
   private seenPopups = new Set<object>();
   private list: HTMLOListElement | null = null;
   private totalsEl: HTMLElement | null = null;
-  private toggleSub: HTMLElement | null = null;
+  private titleEl: HTMLElement | null = null;
+  private subEl: HTMLElement | null = null;
+  private droppedEl: HTMLElement | null = null;
 
-  constructor(private readonly root: HTMLElement) {
+  /** `onOpenChange` lays the page out (the panel opens beside the board); the log only says when. */
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly opts: { onOpenChange?: (open: boolean) => void } = {},
+  ) {
     this.render();
+  }
+
+  get isOpen(): boolean {
+    return this.open;
   }
 
   /** A new game (or a new loop of the recording): starts the log over. */
@@ -72,7 +82,7 @@ export class ActivityLog {
   setOpen(open: boolean): void {
     if (open === this.open) return;
     this.open = open;
-    this.render();
+    this.opts.onOpenChange?.(open);
   }
 
   /** The scheduler's events (or a recording's): calls for the totals, decisions for the list. */
@@ -117,7 +127,7 @@ export class ActivityLog {
     if (state.status === 'gameover') {
       this.push({ kind: 'gain', t, icon: '■', text: 'Game over', meta: `${state.score.toLocaleString('en-US')} points` });
       this.over = true;
-      this.renderToggle();
+      this.renderHead();
     }
   }
 
@@ -180,23 +190,17 @@ export class ActivityLog {
     if (this.subject.kind === 'ghosts') return { title: this.over ? 'Their moves' : 'AI moves', sub: 'What the AIs playing the ghosts decided at each junction' };
     if (this.subject.kind === 'classic') return { title: 'Your game', sub: 'The classic ghosts: no AI here, just the key moments' };
     const name = this.subject.model ? modelName(this.subject.model) : 'The AI';
-    return { title: 'Activity log', sub: `What ${name} decides at each junction, with its odds` };
+    return { title: 'Activity', sub: `What ${name} decides at each junction, with its odds` };
   }
 
-  private renderToggle(): void {
-    const btn = this.root.querySelector<HTMLButtonElement>('.tog');
-    if (!btn) return;
-    const { title } = this.heading();
-    const n = this.totals.moves;
-    btn.querySelector('b')!.textContent = this.subject.kind === 'ghosts' && this.over ? 'Review their moves' : title;
-    this.toggleSub!.textContent =
-      this.subject.kind === 'ghosts' && this.over ? 'every ghost decision, with its odds' : `${n.toLocaleString('en-US')} ${n === 1 ? 'move' : 'moves'} so far`;
-    btn.querySelector('.chev')!.textContent = this.open ? 'Hide ▴' : 'Show ▾';
-    btn.setAttribute('aria-expanded', String(this.open));
+  private renderHead(): void {
+    if (!this.titleEl || !this.subEl) return;
+    const { title, sub } = this.heading();
+    this.titleEl.textContent = title;
+    this.subEl.textContent = sub;
   }
 
   private renderTotals(): void {
-    if (this.toggleSub) this.renderToggle();
     if (!this.totalsEl) return;
     const t = this.totals;
     const cells: [string, string][] = [
@@ -212,44 +216,57 @@ export class ActivityLog {
         return d;
       }),
     );
+    if (this.droppedEl) this.droppedEl.textContent = t.dropped ? `${t.dropped} late answers skipped` : '';
   }
 
+  private fillList(): void {
+    if (!this.list) return;
+    const rows = this.entries.filter((e) => this.visible(e));
+    this.list.replaceChildren(...rows.map((e) => this.row(e)));
+    if (this.filter === 'key' && !rows.some((e) => e.kind !== 'sep')) this.list.append(el('li', 'No key moments yet. Deaths, ghosts eaten and fruit show up here.', 'ev sep empty'));
+  }
+
+  /** The panel beside the board: built once; games and filters only refill it, so opening it never jumps. */
   private render(): void {
-    const btn = el('button', undefined, 'tog');
-    btn.type = 'button';
-    btn.append(el('b'), (this.toggleSub = el('span', undefined, 'sub')), el('span', undefined, 'chev'));
-    btn.addEventListener('click', () => this.setOpen(!this.open));
-    const parts: HTMLElement[] = [btn];
-    this.list = null;
-    this.totalsEl = null;
-    if (this.open) {
-      const { sub } = this.heading();
+    if (!this.list) {
+      const panel = el('section', undefined, 'panel');
       const head = el('div', undefined, 'head');
+      const titles = el('div');
+      this.titleEl = el('h3');
+      this.subEl = el('p');
+      titles.append(this.titleEl, this.subEl);
+      const close = el('button', '×', 'close');
+      close.type = 'button';
+      close.setAttribute('aria-label', 'Close the activity log');
+      close.addEventListener('click', () => this.setOpen(false));
+      head.append(titles, close);
       const seg = el('div', undefined, 'seg');
       seg.setAttribute('role', 'group');
       seg.setAttribute('aria-label', 'Show');
       for (const [key, label] of [['all', 'Every move'], ['key', 'Key moments']] as const) {
         const b = el('button', label);
         b.type = 'button';
-        b.setAttribute('aria-pressed', String(this.filter === key));
+        b.dataset.filter = key;
         b.addEventListener('click', () => {
           this.filter = key;
-          this.render();
+          for (const x of seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x.dataset.filter === key));
+          this.fillList();
         });
         seg.append(b);
       }
-      head.append(el('p', sub), seg);
+      const bar = el('div', undefined, 'bar');
+      bar.append(seg);
       this.totalsEl = el('div', undefined, 'totals');
       this.list = el('ol', undefined, 'log');
-      const rows = this.entries.filter((e) => this.visible(e));
-      this.list.append(...rows.map((e) => this.row(e)));
-      if (this.filter === 'key' && !rows.some((e) => e.kind !== 'sep')) this.list.append(el('li', 'No key moments yet. Deaths, ghosts eaten and fruit show up here.', 'ev sep empty'));
       const foot = el('div', undefined, 'foot');
-      foot.append(el('span', 'The arrows on the board show the same odds.'), el('span', this.totals.dropped ? `${this.totals.dropped} late answers skipped` : ''));
-      parts.push(head, this.totalsEl, this.list, foot);
+      this.droppedEl = el('span');
+      foot.append(el('span', 'The arrows on the board show the same odds.'), this.droppedEl);
+      panel.append(head, bar, this.totalsEl, this.list, foot);
+      this.root.replaceChildren(panel);
+      for (const x of seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x.dataset.filter === this.filter));
     }
-    this.root.replaceChildren(...parts);
+    this.renderHead();
     this.renderTotals();
-    this.renderToggle();
+    this.fillList();
   }
 }

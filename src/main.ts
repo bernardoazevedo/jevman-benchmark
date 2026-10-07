@@ -1,6 +1,7 @@
+import './opper-chrome.css';
 import './style.css';
 import { ActivityLog, type Subject } from './activity';
-import { accountNotice, fetchMe, POOL_EMPTY_NOTICE, poolAmount, renderAccount, signIn, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
+import { accountNotice, fetchMe, POOL_EMPTY_NOTICE, poolAmount, renderAccount, renderDrawerAccount, signIn, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
 import { initialChoice, modelOptions, requestModel, type ModelChoice } from './choice';
 import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
@@ -56,7 +57,43 @@ const noticeEl = $('#notice');
 const dpad = $('#dpad');
 const chipsEl = $('#watch-chips');
 const thinking = new Thinking();
-const log = new ActivityLog($('#activity'));
+const LOG_KEY = 'jevman.log';
+const tvEl = $('#tv');
+const logToggle = $<HTMLButtonElement>('#log-toggle');
+/** The activity log opens beside the board (below it on a phone); the choice is remembered. */
+const log = new ActivityLog($('#activity'), {
+  onOpenChange: (open) => {
+    tvEl.classList.toggle('log-open', open);
+    logToggle.textContent = open ? '‹ Hide log' : 'Activity log ›';
+    logToggle.setAttribute('aria-expanded', String(open));
+    try {
+      localStorage.setItem(LOG_KEY, open ? '1' : '0');
+    } catch {
+      // not remembered
+    }
+  },
+});
+logToggle.addEventListener('click', () => log.setOpen(!log.isOpen));
+try {
+  if (localStorage.getItem(LOG_KEY) === '1') log.setOpen(true);
+} catch {
+  // folded, as for everyone new
+}
+
+// The phone menu: opper.ai's sheet from the bottom.
+const drawer = $('#oc-drawer');
+const menuButton = document.getElementById('oc-menu-button');
+const setDrawer = (open: boolean) => {
+  drawer.hidden = !open;
+  menuButton?.setAttribute('aria-expanded', String(open));
+};
+menuButton?.addEventListener('click', () => setDrawer(drawer.hidden !== false));
+drawer.addEventListener('click', (e) => {
+  if ((e.target as Element).closest('[data-close], a')) setDrawer(false);
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !drawer.hidden) setDrawer(false);
+});
 
 // ---------- the account, top right ----------
 const accountEl = $('#account');
@@ -67,6 +104,7 @@ let account: AccountView = {
 const showAccount = (view: AccountView) => {
   account = view;
   renderAccount(accountEl, view);
+  renderDrawerAccount($('#oc-drawer-account'), view);
 };
 showAccount({ ...account, notice: accountNotice(me, authError, false) });
 // The free credits tick down while people play: refresh the amount now and then, while the page is in view.
@@ -481,7 +519,7 @@ function gameOver(): void {
     onReview: l
       ? () => {
           log.setOpen(true);
-          $('#activity').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          tvEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       : null,
     onBack: showRecording,
