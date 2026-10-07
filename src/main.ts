@@ -119,6 +119,13 @@ const setDrawer = (open: boolean) => {
   menuButton?.setAttribute('aria-expanded', String(open));
 };
 menuButton?.addEventListener('click', () => setDrawer(drawer.hidden !== false));
+// Its first row is the product you're on; the chevron beside it shows the family (Chat, Roundtable, jevman).
+const famToggle = $<HTMLButtonElement>('#oc-fam-toggle');
+famToggle.addEventListener('click', () => {
+  const open = famToggle.getAttribute('aria-expanded') !== 'true';
+  famToggle.setAttribute('aria-expanded', String(open));
+  $('#oc-fam').hidden = !open;
+});
 drawer.addEventListener('click', (e) => {
   if ((e.target as Element).closest('[data-close], a')) setDrawer(false);
 });
@@ -144,7 +151,10 @@ if (me.mode === 'pool') {
     if (document.hidden || account.kind !== 'pool') return;
     void fetchMe().then((fresh) => {
       if (account.kind !== 'pool') return;
-      if (fresh.mode === 'pool') updatePoolAmount(accountEl, fresh.pool?.remainingUsd ?? null);
+      if (fresh.mode === 'pool') {
+        updatePoolAmount(accountEl, fresh.pool?.remainingUsd ?? null);
+        updatePoolAmount($('#oc-drawer-account'), fresh.pool?.remainingUsd ?? null);
+      }
       else if (fresh.mode === 'none' && fresh.pool && !fresh.unavailable) showAccount({ kind: 'pool-empty', me: fresh });
     });
   }, 60_000);

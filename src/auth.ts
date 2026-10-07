@@ -178,14 +178,26 @@ function signUpLink(): HTMLAnchorElement {
   return a;
 }
 
-/** The same choices at the foot of the phone menu, full width. */
+/**
+ * The foot of the phone menu, as on AI Roundtable. Signed out: Sign up and Login, full width, then the free credits.
+ * Signed in: the wallet and signing out, then who is signed in.
+ */
 export function renderDrawerAccount(root: HTMLElement, view: AccountView): void {
   const { me } = view;
+  const foot = (label: string, value: HTMLElement) => {
+    const row = el('div', undefined, 'credits-row');
+    row.append(el('span', label), value);
+    return row;
+  };
   if (view.kind === 'player') {
-    const out = el('button', `Sign out (${me.user?.name ?? me.user?.email ?? 'Opper user'})`);
+    const wallet = el('a', 'Opper Wallet ↗', 'row');
+    wallet.href = httpsUrl(me.walletUrl);
+    wallet.target = '_blank';
+    wallet.rel = 'noopener';
+    const out = el('button', 'Log out', 'row');
     out.type = 'button';
     out.addEventListener('click', () => void signOut());
-    root.replaceChildren(out);
+    root.replaceChildren(wallet, out, foot(me.user?.email ?? me.user?.name ?? 'Opper user', el('b', 'Signed in', 'signed-in')));
     return;
   }
   const signUp = el('a', 'Sign up', 'solid');
@@ -195,6 +207,8 @@ export function renderDrawerAccount(root: HTMLElement, view: AccountView): void 
   login.disabled = !me.loginAvailable;
   login.addEventListener('click', signIn);
   root.replaceChildren(signUp, login);
+  const amount = view.kind === 'pool' ? poolAmount(me.pool?.remainingUsd ?? null) : null;
+  if (amount) root.append(foot('Free credits', el('b', amount, 'credits')));
 }
 
 /**

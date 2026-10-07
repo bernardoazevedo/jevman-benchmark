@@ -21,15 +21,42 @@
 .oc li.relative:hover > .oc-dd, .oc li.relative:focus-within > .oc-dd { display: block; }
 .oc-spacer { height: 60px; }
 
-/* Below lg, the site's menu is a sheet from the bottom. */
+/* The bar at narrower widths, as on AI Roundtable (which copies the same site nav). */
+/* The shared Chat/Roundtable/jevman slot names the product you're on, worn as a pill. */
+.oc .oc-on { background: var(--accent); color: var(--accent-foreground); }
+/* 1024–1279px: tighter items, so the bar fits beside the credits and Sign up (it wrapped Docs at ~1060px). */
+@media (min-width: 1024px) and (max-width: 1279px) { .oc-header [data-slot="navigation-menu-list"] > li > a { padding-left: 8px; padding-right: 8px; } }
+/* Below 1160px the credits leave the bar for the menu sheet; below 1152px Login does too (the site's own rule). */
+@media (max-width: 1159px) { .oc-header #account .credits { display: none; } }
+/* Below lg the product links sit in the bar beside the logo, with the menu button at the end. */
+.oc-products { display: none; align-items: center; gap: 2px; min-width: 0; }
+.oc-products a { display: inline-flex; height: 36px; align-items: center; padding: 0 8px; border-radius: 6px; font-size: 14px; font-weight: 500; white-space: nowrap; transition: background-color 150ms; }
+.oc-products a:hover, .oc-products a[aria-current] { background: var(--accent); color: var(--accent-foreground); }
+@media (max-width: 1023px) { .oc-products { display: flex; } .oc-header .pr-8 { padding-right: 16px; } }
+/* Below md the logo is the mark alone. */
+.oc .oc-logo-icon { display: none; }
+@media (max-width: 767px) { .oc .oc-logo-full { display: none; } .oc .oc-logo-icon { display: block; } }
+
+/* Below lg, the menu is a sheet from the bottom, as on AI Roundtable: the product family, the rest of Opper, the account. */
 .oc-drawer { position: fixed; inset: 0; z-index: 60; }
 .oc-drawer .shade { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4); }
-.oc-drawer .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80svh; overflow: auto; background: var(--background); border-top-left-radius: 10px; border-top-right-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
-.oc-drawer .grip { align-self: center; width: 100px; height: 8px; border-radius: 999px; background: var(--muted); margin: -12px 0 4px; }
-.oc-drawer a.big { font-size: 1.125rem; font-weight: 500; }
-.oc-drawer .sub { margin-left: 16px; display: flex; flex-direction: column; gap: 8px; }
-.oc-drawer .sub a { font-size: 1rem; color: var(--muted-foreground); }
-.oc-drawer .sub a[aria-current] { color: var(--foreground); font-weight: 600; }
-.oc-drawer .ctas { display: grid; gap: 8px; margin-top: 8px; }
-.oc-drawer .ctas a, .oc-drawer .ctas button { display: block; width: 100%; text-align: center; border-radius: 999px; border: 1px solid var(--foreground); padding: 10px 14px; font-weight: 600; }
+.oc-drawer .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85svh; overflow: auto; background: var(--card); border-top: 1px solid var(--border); border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 4px; }
+.oc-drawer .grip { align-self: center; width: 40px; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--muted-foreground) 30%, transparent); margin-bottom: 20px; }
+.oc-drawer .row { display: flex; align-items: center; width: 100%; border-radius: 8px; padding: 12px; font-size: 16px; font-weight: 500; color: var(--foreground); text-align: left; transition: background-color 150ms; }
+.oc-drawer .row:hover { background: var(--accent); }
+.oc-drawer .fam { display: flex; align-items: center; }
+.oc-drawer .fam .row { flex: 1; padding-block: 14px; }
+.oc-drawer .fam-toggle { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 6px; }
+.oc-drawer .fam-toggle:hover { background: var(--accent); }
+.oc-drawer .fam-toggle svg { transition: transform 150ms; }
+.oc-drawer .fam-toggle[aria-expanded='true'] svg { transform: rotate(90deg); }
+.oc-drawer .fam-list { margin-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.oc-drawer .fam-list .row[aria-current] { background: color-mix(in srgb, var(--accent) 50%, transparent); }
+.oc-drawer .group { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.oc-drawer .eyebrow { padding: 0 12px 4px; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-foreground); }
+.oc-drawer .ctas { margin-top: 28px; display: flex; flex-direction: column; gap: 12px; }
+.oc-drawer .ctas > a:not(.row), .oc-drawer .ctas > button:not(.row) { display: block; width: 100%; text-align: center; border-radius: 999px; border: 1px solid var(--foreground); padding: 12px 32px; font-weight: 600; }
 .oc-drawer .ctas .solid { background: var(--foreground); color: var(--background); }
+.oc-drawer .credits-row { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--muted-foreground); }
+.oc-drawer .credits-row b { font-size: 16px; font-weight: 600; color: #22c55e; font-variant-numeric: tabular-nums; }
+.oc-drawer .credits-row b.signed-in { font-size: 14px; font-weight: 500; }
