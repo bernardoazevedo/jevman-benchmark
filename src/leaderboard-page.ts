@@ -1,7 +1,6 @@
 import './style.css';
 import type { Community, Leaderboard } from '../shared/leaderboard';
-import { communityRows, leaderboardRows, topScore, type LeaderboardRow } from './leaderboard-view';
-import { jointLeaders } from '../shared/leaderboard';
+import { communityRows, leaderboardRows, topScore, verdict, type LeaderboardRow } from './leaderboard-view';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -21,25 +20,29 @@ function rowElement(r: LeaderboardRow): HTMLLIElement {
   head.append(who);
   const badges = el('div', undefined, 'lb-badges');
   for (const b of r.badges) badges.append(el('span', b, b === 'Self-reported' ? 'lb-badge lb-self' : 'lb-badge'));
-  head.append(badges);
-  const bar = el('div', undefined, 'lb-bar');
+  head.append(badges, el('span', r.scoreLabel, 'lb-score'));
+  // A thin line for the score, full colour only for the leaders, so the numbers lead and the bars only hint.
+  const bar = el('div', undefined, r.rank === 1 ? 'lb-bar lb-lead' : 'lb-bar');
   const fill = el('span', undefined, 'lb-fill');
   fill.style.width = `${r.barPercent}%`;
-  bar.append(fill, el('span', r.scoreLabel, 'lb-score'));
+  bar.append(fill);
+  // One plain line (and the watch link) under the bar, then the rest of the numbers.
+  const line = el('div', undefined, 'lb-line');
+  line.append(el('span', r.summary, 'lb-summary'));
+  if (r.link) {
+    const link = el('a', r.link.label, 'lb-watch');
+    link.href = r.link.href;
+    // A submitter's page is somewhere else entirely.
+    if (!r.link.href.startsWith('/')) Object.assign(link, { target: '_blank', rel: 'noopener noreferrer nofollow ugc' });
+    line.append(link);
+  }
   const stats = el('dl', undefined, 'lb-stats');
   for (const [k, v] of r.stats) {
     const stat = el('div', undefined, 'lb-stat');
     stat.append(el('dt', k), el('dd', v));
     stats.append(stat);
   }
-  li.append(head, bar, stats);
-  if (r.link) {
-    const link = el('a', r.link.label, 'lb-watch');
-    link.href = r.link.href;
-    // A submitter's page is somewhere else entirely.
-    if (!r.link.href.startsWith('/')) Object.assign(link, { target: '_blank', rel: 'noopener noreferrer nofollow ugc' });
-    li.append(link);
-  }
+  li.append(head, bar, line, stats);
   return li;
 }
 
@@ -64,24 +67,20 @@ function renderCommunity(community: Community, top: number): void {
 function render(board: Leaderboard, community: Community): void {
   const { gamesPerModel, maxSeconds } = board.settings;
   const date = new Date(board.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const tied = jointLeaders(board.entries).map((e) => e.name);
-  const names = tied.length > 2 ? `${tied.slice(0, -1).join(', ')} and ${tied.at(-1)}` : tied.join(' and ');
-  $('lede').textContent =
-    `${board.entries.length} AI models each played ${gamesPerModel} real-time games of Pac-Man against the classic ghosts, ranked by average score.` +
-    (tied.length ? ` ${names} are too close to call: their scores are within the margin of error.` : '');
+  $('verdict').textContent = verdict(board);
+  $('lede').textContent = `${board.entries.length} AI models each played ${gamesPerModel} games of Pac-Man against the classic arcade ghosts. Ranked by average score.`;
   $('list').replaceChildren(...leaderboardRows(board, topScore(board.entries, community.entries)).map(rowElement));
   renderCommunity(community, topScore(board.entries, community.entries));
   // Results written before models could be skipped have no `skipped` list.
   const skipped = (board.skipped ?? []).map((s) => `${s.model} could not play: ${s.reason}`);
   $('method').replaceChildren(
     ...[
-      `${gamesPerModel} games per model, each ending at game over or after ${maxSeconds} seconds of play. Scores vary a lot from game to game; the ± is the margin of error on the average (two standard errors).`,
-      'Pac-Man is played by the model; the four ghosts follow the classic scripted rules, the same for every model.',
-      'Real time: a model that answers slowly reaches junctions late. If it takes over 2 seconds, a simple rule decides that move (counted as a fallback).',
-      "Every move is the model's own, with no safety net.",
-      'Every model gets the same question at each junction: the facts about each route (pellets, ghosts, traps, fruit) and a choice of direction.',
+      `Each model played ${gamesPerModel} games. A game lasts until Pac-Man loses his three lives, or ${maxSeconds % 60 === 0 ? `${maxSeconds / 60} minutes` : `${maxSeconds} seconds`}.`,
+      'The AI plays Pac-Man. The ghosts follow the classic arcade rules, the same for every model.',
+      'Every move is the AI\'s own. It plays in real time: if it takes more than 2 seconds to decide, a simple backup rule moves for it.',
+      'Scores vary from game to game, so the ± shows the margin of error. Models within it of each other are tied.',
       ...skipped,
-      `Last run ${date}. Run it yourself with npm run leaderboard.`,
+      `Last run ${date}. The code is open source: run it yourself, or add your own model.`,
     ].map((t) => el('li', t)),
   );
 }

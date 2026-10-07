@@ -5,36 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="data:," />
     <title>jevman · Can you beat the AI at Pac-Man?</title>
-    <meta name="description" content="Watch five AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <meta name="description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="jevman" />
     <meta property="og:title" content="Can you beat the AI at Pac-Man?" />
-    <meta property="og:description" content="Watch five AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <meta property="og:description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
     <meta property="og:url" content="https://jevman.apps.chadda.se/" />
     <meta property="og:image" content="https://jevman.apps.chadda.se/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Can you beat the AI at Pac-Man?" />
-    <meta name="twitter:description" content="Watch five AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <meta name="twitter:description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
     <meta name="twitter:image" content="https://jevman.apps.chadda.se/og.png" />
   </head>
   <body>
-    <div class="page">
-    <header class="site">
-      <a class="brand" href="/">
-        <span class="logo" aria-hidden="true"></span>
-        <div>
-          <h1>jevman</h1>
-          <p>Watch AI play Pac-Man, or try to beat it</p>
+    <header class="appbar">
+      <div class="appbar-inner">
+        <a class="brand" href="/">
+          <span class="logo" aria-hidden="true"></span>
+          <div>
+            <h1>jevman</h1>
+            <p>Watch AI play Pac-Man, or try to beat it</p>
+          </div>
+        </a>
+        <nav class="tabs" aria-label="Site">
+          <a href="/" aria-current="page">Play</a>
+          <a href="/leaderboard">Leaderboard</a>
+        </nav>
+        <div class="appbar-end">
+          <a class="gh" href="https://github.com/joch/jevman" target="_blank" rel="noopener">GitHub ↗</a>
+          <div id="account" class="account" aria-live="polite"></div>
         </div>
-      </a>
-      <nav class="site-nav" aria-label="Site">
-        <a href="/leaderboard">Leaderboard</a>
-        <a href="https://github.com/joch/jevman" target="_blank" rel="noopener">GitHub ↗</a>
-      </nav>
-      <div id="account" class="account" aria-live="polite"></div>
+      </div>
     </header>
+    <div class="page">
     <main class="layout">
       <section class="game">
         <header class="hud">
