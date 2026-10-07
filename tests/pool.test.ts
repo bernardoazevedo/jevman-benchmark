@@ -2,12 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { handleMe, SESSION_COOKIE, type AuthConfig, type HttpRequest } from '../server/auth';
 import { handleDecideRequest, poolLimitRequest, rejectDecideRequest, resolveKey, type PoolAccess } from '../server/decide';
 import type { JevTarget } from '../server/jev';
-import { clientIp, MAX_POOL_BODY_BYTES, Pool, poolAcceptsBody, statusFromMe, trustedProxiesFromEnv, VisitorLimits } from '../server/pool';
+import { clientIp, MAX_POOL_BODY_BYTES, Pool, poolAcceptsBody, statusFromMe, trustedProxiesFromEnv, visitorKey, VisitorLimits } from '../server/pool';
 import { sealSession } from '../server/session';
 
 const cfg: AuthConfig = { redirectUri: 'http://localhost:5173/auth/callback', opperUrl: 'https://api.opper.ai', sessionSecret: 's'.repeat(64) };
 const DEV: JevTarget = { provider: 'opper', apiKey: 'op-dev', baseUrl: 'https://api.opper.ai' };
-const body = { state: { maze: ['#'] }, questions: { blinky: { type: 'choice', instructions: 'chase', criteria: { left: 'a', up: 'b' } } } };
+// A question the way the game words it (the pool pays only for the game's own questions).
+const body = {
+  state: { maze: ['#####', '#.P.#', '#####'], mode: 'chase', lives: 3 },
+  questions: { blinky: { type: 'choice', instructions: 'You are Blinky, the red ghost. You are relentless: always close the distance to Pac-Man directly. You are approaching junction (1,1) heading left. Pick the direction to take there.', criteria: { left: 'Go left: Pac-Man 4 steps away via this route', up: 'Go up: Pac-Man 6 steps away via this route' } } },
+};
 const answers = { blinky: { type: 'choice', choice: 'up', confidence: 0.9, probabilities: { up: 0.9, left: 0.1 } } };
 const post = (headers: HttpRequest['headers'] = {}, remoteAddress = '10.0.0.1'): HttpRequest => ({ method: 'POST', url: '/api/decide', headers: { 'content-type': 'application/json', ...headers }, remoteAddress });
 const playerCookie = () => `${SESSION_COOKIE}=${encodeURIComponent(sealSession({ v: 1, apiKey: 'op-player', user: {}, issuedAt: Date.now() }, cfg.sessionSecret))}`;
@@ -202,5 +206,22 @@ describe('/api/me with the free credits', () => {
 
   it('is signed out (sign in to play) once it is empty', () => {
     expect(me({ open: false, remainingUsd: 0 })).toMatchObject({ mode: 'none', pool: { open: false, remainingUsd: 0 } });
+  });
+});
+
+describe('visitorKey', () => {
+  it('counts IPv4 addresses one by one and IPv6 by /64', () => {
+    expect(visitorKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(visitorKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(visitorKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
+    expect(visitorKey('2001:db8:1:2:bbbb:cccc:dddd:eeee')).toBe('2001:db8:1:2::/64');
+    expect(visitorKey('2001:db8::1')).toBe('2001:db8:0:0::/64');
+  });
+
+  it('one /64 shares one allowance', () => {
+    const limits = new VisitorLimits({ ratePerSec: 1, burst: 2 }, () => 0);
+    expect(limits.take('2001:db8:1:2::1')).toBe('ok');
+    expect(limits.take('2001:db8:1:2::2')).toBe('ok');
+    expect(limits.take('2001:db8:1:2::3')).toBe('rate');
   });
 });

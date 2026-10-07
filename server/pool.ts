@@ -1,4 +1,5 @@
 import type { HttpRequest } from './auth.ts';
+import { GAME_WORDS } from '../shared/game-words.ts';
 
 /**
  * The free credits: a public Opper key (OPPER_POOL_API_KEY) that pays for signed-out visitors until the money behind
@@ -141,15 +142,36 @@ export class VisitorLimits {
   /** Takes one request from the visitor's allowance, or says it is sending too fast. */
   take(visitor: string): LimitVerdict {
     const now = this.now();
-    if (this.buckets.size > MAX_TRACKED) this.buckets.clear();
-    const b = this.buckets.get(visitor) ?? { tokens: this.settings.burst, at: now };
+    const key = visitorKey(visitor);
+    const b = this.buckets.get(key) ?? { tokens: this.settings.burst, at: now };
     b.tokens = Math.min(this.settings.burst, b.tokens + ((now - b.at) / 1000) * this.settings.ratePerSec);
     b.at = now;
-    this.buckets.set(visitor, b);
+    // Most recently seen last (a Map keeps insertion order), so a full table drops the visitors idle longest, not all.
+    this.buckets.delete(key);
+    this.buckets.set(key, b);
+    for (const old of this.buckets.keys()) {
+      if (this.buckets.size <= MAX_TRACKED) break;
+      this.buckets.delete(old);
+    }
     if (b.tokens < 1) return 'rate';
     b.tokens -= 1;
     return 'ok';
   }
+}
+
+/**
+ * Who a rate limit counts: an IPv4 address as is, an IPv6 address by its /64 network (one connection usually holds a
+ * whole /64, so counting addresses one by one would give each of them a fresh allowance).
+ */
+export function visitorKey(ip: string): string {
+  const v4 = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1]!;
+  if (!ip.includes(':')) return ip;
+  const [head = '', tail = ''] = ip.split('%')[0]!.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const full = ip.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  return `${full.slice(0, 4).map((h) => h.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
 
 /**
@@ -174,14 +196,51 @@ export function trustedProxiesFromEnv(env: Record<string, string | undefined>): 
   return env.NODE_ENV === 'production' ? 2 : 0;
 }
 
-/** Whether a decide body is the shape and size a real game sends (the pool pays only for that). */
+const QUESTION_NAMES = new Set(['pacman', 'pacman_escape', 'blinky', 'pinky', 'inky', 'clyde']);
+const DIRS = new Set(['up', 'down', 'left', 'right']);
+const MAZE_ROW = /^[#\-. oFPBKICbkice_|=]{1,40}$/;
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Text made only of the game's own words, numbers and punctuation: what the game's questions are written in. */
+export function gameText(text: unknown, max: number): boolean {
+  if (typeof text !== 'string' || text.length > max) return false;
+  for (const w of text.toLowerCase().match(/[a-z][a-z'-]*/g) ?? []) if (!GAME_WORDS.has(w.replace(/^[-']+|[-']+$/g, '')) && !GAME_WORDS.has(w.replace(/'s$/, ''))) return false;
+  return true;
+}
+
+/** The state's other fields: numbers, flags, game words, or small objects of those (positions, the fruit). */
+function stateValue(v: unknown, depth = 0): boolean {
+  if (v === null || typeof v === 'number' || typeof v === 'boolean') return true;
+  if (typeof v === 'string') return gameText(v, 300);
+  if (depth >= 3) return false;
+  if (Array.isArray(v)) return v.length <= 16 && v.every((x) => stateValue(x, depth + 1));
+  return isObj(v) && Object.keys(v).length <= 16 && Object.entries(v).every(([k, x]) => k.length <= 32 && stateValue(x, depth + 1));
+}
+
+/**
+ * Whether a decide body is what the game sends (the pool pays only for that): at most five questions named for
+ * Pac-Man or a ghost, each a choice between directions, worded in the game's own words, about a maze state. So the
+ * shared key can't be used to ask a model anything else.
+ */
 export function poolAcceptsBody(raw: string): boolean {
   if (Buffer.byteLength(raw, 'utf8') > MAX_POOL_BODY_BYTES) return false;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw) as { questions?: unknown };
-    const q = parsed?.questions;
-    return !!q && typeof q === 'object' && !Array.isArray(q) && Object.keys(q).length <= MAX_POOL_QUESTIONS;
+    parsed = JSON.parse(raw);
   } catch {
     return false;
   }
+  if (!isObj(parsed) || Object.keys(parsed).some((k) => !['model', 'state', 'questions', 'keys'].includes(k))) return false;
+  const { questions, state, keys } = parsed;
+  if (!isObj(questions) || Object.keys(questions).length === 0 || Object.keys(questions).length > MAX_POOL_QUESTIONS) return false;
+  for (const [name, q] of Object.entries(questions)) {
+    if (!QUESTION_NAMES.has(name) || !isObj(q) || q.type !== 'choice' || !gameText(q.instructions, 1500) || !isObj(q.criteria)) return false;
+    const criteria = Object.entries(q.criteria);
+    if (criteria.length < 2 || criteria.length > 4) return false;
+    if (!criteria.every(([dir, text]) => DIRS.has(dir) && typeof text === 'string' && text.startsWith(`Go ${dir}: `) && gameText(text, 700))) return false;
+  }
+  if (!isObj(state) || !Array.isArray(state.maze) || state.maze.length > 40 || !state.maze.every((row) => typeof row === 'string' && MAZE_ROW.test(row))) return false;
+  if (!Object.entries(state).every(([k, v]) => k === 'maze' || (k.length <= 32 && stateValue(v)))) return false;
+  if (keys !== undefined && (!isObj(keys) || Object.keys(keys).length > MAX_POOL_QUESTIONS || !Object.values(keys).every((k) => typeof k === 'string' && k.length <= 64))) return false;
+  return true;
 }
