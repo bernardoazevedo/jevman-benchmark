@@ -1,7 +1,8 @@
 import type { Decision } from './brain';
 import { ARCADE_FILL, GHOST_NAMES, ghostIcon, type Lineup } from './overlay';
 import type { SchedulerEvent } from './scheduler';
-import type { GameState, Status } from './sim';
+import { fruitForLevel, type GameState, type Status } from './sim';
+import { FRUIT_EMOJI } from './render';
 import type { Dir, GhostId } from './types';
 import { modelName } from '../shared/models';
 
@@ -117,7 +118,8 @@ export class ActivityLog {
     for (const pop of state.popups) {
       if (this.seenPopups.has(pop)) continue;
       this.seenPopups.add(pop);
-      this.push(GHOST_POINTS.has(pop.text) ? { kind: 'gain', t, k: 'ghost', icon: '+', text: 'Ate a ghost', meta: `+${pop.text}` } : { kind: 'gain', t, k: 'fruit', icon: '+', text: 'Ate the fruit', meta: `+${pop.text}` });
+      // The icon: a frightened (blue) ghost for a ghost eaten, the level's own fruit for the fruit.
+      this.push(GHOST_POINTS.has(pop.text) ? { kind: 'gain', t, k: 'ghost', icon: '', text: 'Ate a ghost', meta: `+${pop.text}` } : { kind: 'gain', t, k: 'fruit', icon: FRUIT_EMOJI[fruitForLevel(state.level).kind] ?? '+', text: 'Ate the fruit', meta: `+${pop.text}` });
     }
     if (state.popups.length === 0 && this.seenPopups.size > 50) this.seenPopups.clear();
     if (state.status === this.lastStatus) return;
@@ -160,7 +162,7 @@ export class ActivityLog {
     let meta = '';
     if (e.kind === 'move' || e.kind === 'backup') {
       if (e.actor === 'pacman') ic.textContent = ARROW[e.dir];
-      else ic.append(ghostIcon(e.actor));
+      else ic.append(ghostIcon(e.actor, ARCADE_FILL[e.actor]));
       const who = this.whoText(e.actor);
       if (who) tx.append(el('span', who, 'who'));
       if (e.kind === 'move') {
@@ -173,7 +175,7 @@ export class ActivityLog {
       }
     } else if (e.kind === 'death') {
       if (e.ghost) {
-        ic.append(ghostIcon(e.ghost));
+        ic.append(ghostIcon(e.ghost, ARCADE_FILL[e.ghost]));
         li.style.setProperty('--gc', ARCADE_FILL[e.ghost]); // the banner in the colour of the ghost that caught Pac-Man
       }
       const model = e.ghost ? this.subject.lineup?.[e.ghost] : undefined;
@@ -182,7 +184,8 @@ export class ActivityLog {
       meta = e.lives > 2 ? `${e.lives - 1} lives left` : e.lives === 2 ? '1 life left' : '';
     } else {
       li.dataset.k = e.k;
-      ic.textContent = e.icon;
+      if (e.k === 'ghost') ic.append(ghostIcon('inky', '#2121ff'));
+      else ic.textContent = e.icon;
       tx.textContent = e.text;
       meta = e.meta;
     }

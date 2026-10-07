@@ -203,12 +203,13 @@ main { display: block; padding-bottom: 96px; }
 .side-log .ev .tx b, .side-log .ev .p { color: var(--j-arc-yellow); font-weight: 700; }
 .side-log .ev .alt, .side-log .ev .who { color: var(--j-arc-dim); font-size: 12px; }
 .side-log .ev.backup .ic, .side-log .ev.backup .tx { background: none; color: #ffb852; }
-.side-log .ev.key { --bc: #fff; grid-template-columns: 3.1em minmax(0, 1fr) auto; margin-block: 3px; padding-block: 7px; border-block: 1px solid var(--bc); border-radius: 0; background: none; color: var(--bc); }
-.side-log .ev.key .ic { display: none; }
-/* A death keeps its icon: the ghost that caught Pac-Man, where the arrow goes on a move. */
-.side-log .ev.key.death { grid-template-columns: 3.1em 16px minmax(0, 1fr) auto; }
-.side-log .ev.key.death .ic { display: grid; }
-.side-log .ev.key.death .ic svg { width: 16px; height: 16px; }
+.side-log .ev.key { --bc: #fff; grid-template-columns: 3.1em 16px minmax(0, 1fr) auto; margin-block: 3px; padding-block: 7px; border-block: 1px solid var(--bc); border-radius: 0; background: none; color: var(--bc); }
+/* Every key moment keeps its icon where a move's arrow goes: the ghost that caught Pac-Man, a frightened ghost eaten,
+   the fruit, a star for a level. On the cabinet's black, with no tile behind it. */
+.side-log .ev.key .ic { background: none; font-size: 13px; }
+.side-log .ev .ic svg { width: 16px; height: 16px; }
+/* Two key moments in a row share one line, not two. */
+.side-log .ev.key + .ev.key { border-top: 0; margin-top: -3px; }
 .side-log .ev.key .tx { text-align: center; font: 700 12.5px/1.35 var(--j-mono); letter-spacing: 0.04em; color: var(--bc); }
 .side-log .ev.key .mt { color: var(--bc); opacity: 0.8; }
 .side-log .ev.death { --bc: var(--gc, #ff5a5a); }
