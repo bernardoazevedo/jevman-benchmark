@@ -9,15 +9,15 @@ import { createJevMiddleware } from '../server/routes';
 import { sealSession } from '../server/session';
 import { boardOf, MIXED_LINEUP } from '../shared/lineups';
 import { checkPlayerGame } from '../src/player-check';
-import { playAndRecord } from './support/player-game';
+import { playAndRecord, TEST_SECRET } from './support/player-game';
 
-const SECRET = 's'.repeat(64);
+const SECRET = TEST_SECRET;
 const entry = (initials: string, score: number) => ({ initials, score, at: '2026-10-08T00:00:00.000Z', who: 'x' });
 
 describe('HighScores', () => {
   it('keeps the ten best per board, best first, and never shows who', () => {
     const h = new HighScores(null);
-    for (let i = 1; i <= 12; i++) h.add('mixed', entry('AAA', i * 100));
+    for (let i = 1; i <= 12; i++) h.add('mixed', { ...entry('AAA', i * 100), who: `p${i}` });
     const board = h.view().mixed!;
     expect(board).toHaveLength(BOARD_SIZE);
     expect(board[0]!.score).toBe(1200);
@@ -25,6 +25,14 @@ describe('HighScores', () => {
     expect(board[0]).not.toHaveProperty('who');
     expect(h.placeFor('mixed', 250)).toBeNull();
     expect(h.placeFor('mixed', 1250)).toBe(1);
+  });
+
+  it('keeps one line per account per board: its best', () => {
+    const h = new HighScores(null);
+    expect(h.add('mixed', { ...entry('AAA', 500), who: 'same' })).toBe(1);
+    expect(h.add('mixed', { ...entry('AAA', 300), who: 'same' })).toBe(1);
+    expect(h.add('mixed', { ...entry('AAA', 900), who: 'same' })).toBe(1);
+    expect(h.view().mixed).toEqual([{ initials: 'AAA', score: 900, at: '2026-10-08T00:00:00.000Z' }]);
   });
 
   it('survives a restart through its file', () => {
@@ -95,6 +103,8 @@ describe('/api/highscores', () => {
     expect((await call(handler, 'POST', signedIn, { board: 'mixed', initials: 'ABC', recording: { ...recording, final: { ...recording.final, score: 99_999 } } })).status).toBe(422);
     expect((await call(handler, 'POST', signedIn, { board: 'mixed', initials: 'A!', recording })).status).toBe(400);
     expect((await call(handler, 'POST', signedIn, { board: 'nope', initials: 'ABC', recording })).status).toBe(400);
+    // played against Mixed, entered for All Clef
+    expect((await call(handler, 'POST', signedIn, { board: 'opper/clef', initials: 'ABC', recording })).status).toBe(422);
     expect(highScores.view().mixed).toEqual([]);
   });
 });

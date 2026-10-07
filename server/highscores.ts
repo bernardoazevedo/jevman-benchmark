@@ -58,11 +58,20 @@ export class HighScores {
     return place <= BOARD_SIZE ? place : null;
   }
 
-  /** Puts a score on its board; its place, or null if it didn't make the top ten. */
+  /**
+   * Puts a score on its board; its place, or null if it didn't make the top ten. One line per account per board: a
+   * better score replaces the account's line, a worse one changes nothing (the account's place is returned).
+   */
   add(board: string, entry: ScoreEntry): number | null {
+    const list = this.boards[board];
+    if (!list) return null;
+    const mine = list.findIndex((e) => e.who === entry.who);
+    if (mine !== -1) {
+      if (list[mine]!.score >= entry.score) return mine + 1;
+      list.splice(mine, 1);
+    }
     const place = this.placeFor(board, entry.score);
     if (place === null) return null;
-    const list = this.boards[board]!;
     list.splice(place - 1, 0, entry);
     list.length = Math.min(list.length, BOARD_SIZE);
     this.save();

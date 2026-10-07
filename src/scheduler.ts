@@ -53,6 +53,8 @@ export class Scheduler implements Controls {
   private readonly ready = new Map<string, { decision: Decision; fruitOnBoard: boolean; fruitRoute: Dir | null; model?: ModelId }>();
   /** Answers already handed to the sim whose question is still open (escape questions); never re-asked. */
   private readonly consumed = new Set<string>();
+  /** The decision the last `decide` handed out: a recorded game keeps its signature (or that it was a fallback). */
+  lastDecision: Decision | null = null;
   private readonly slots: { inFlight: number };
   private readonly timeoutMs: number;
   private readonly maxInFlight: number;
@@ -118,12 +120,14 @@ export class Scheduler implements Controls {
     if (!r) return null;
     this.ready.delete(point.key);
     let d = r.decision;
+    this.lastDecision = d;
     // Fruit can appear or expire inside the very step that reaches the junction, after the last update(), and
     // while Pac-Man waits for an answer the fruit can drift out of reach. Either way the answer is stale.
     const features = point.actor === 'pacman' && (r.fruitOnBoard || state.fruit) ? optionFeatures(state, point) : null;
     if (features && (r.fruitOnBoard !== (state.fruit !== null) || fruitRoute(state, point, features) !== r.fruitRoute)) {
       this.deps.onEvent({ type: 'superseded', decision: d });
       d = fallbackDecision(state, { point, features }, 'fruit changed');
+      this.lastDecision = d;
       this.deps.onEvent({ type: 'decision', decision: d, latencyMs: null, fruitOnBoard: state.fruit !== null });
     }
     if (!point.escape) return d.choice;
@@ -146,7 +150,7 @@ export class Scheduler implements Controls {
     this.slots.inFlight += 1;
     const isCurrent = (p: Pending) => this.pending.get(p.q.point.key) === p;
     this.deps
-      .transport({ ...(requested ? { model: requested } : {}), ...buildRequest(state, batch.map((p) => p.q)) })
+      .transport({ ...(requested ? { model: requested } : {}), ...buildRequest(state, batch.map((p) => p.q)), keys: Object.fromEntries(batch.map((p) => [questionName(p.q.point), p.q.point.key])) })
       .then(
         (res) => {
           const model = res.model ?? requested;
@@ -166,7 +170,8 @@ export class Scheduler implements Controls {
               continue;
             }
             const parsed = parseAnswer(res.answers[questionName(p.q.point)], p.q);
-            const decision = parsed ? { ...parsed, model } : fallbackDecision(state, p.q, 'invalid answer');
+            const sig = res.signatures?.[questionName(p.q.point)];
+            const decision = parsed ? { ...parsed, model, ...(sig && res.signedAs ? { sig, signedAs: res.signedAs } : {}) } : fallbackDecision(state, p.q, 'invalid answer');
             this.resolve(p.q.point.key, decision, res.latencyMs);
           }
         },

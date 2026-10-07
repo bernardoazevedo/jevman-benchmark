@@ -273,16 +273,27 @@ let scheduler = newScheduler(stats);
 /** Your game against AI ghosts, recorded as it is played (steering, steps, the ghosts' answers) for the high-score check. */
 let recorder: Recorder | null = null;
 let recFrame = 0;
+/** A recorded game's steps so far, and the time not yet stepped (it steps at FIXED_STEP). */
+let recSteps = 0;
+let stepAcc = 0;
+const FIXED_STEP = roundDt(1 / 60);
 const controls: Controls = {
   decide: (point, s) => (jevActors(s).includes(point.actor) ? scheduler.decide(point, s) : greedyChoice(s, point, optionFeatures(s, point))),
 };
 /** The controls a step uses: through the recorder in your own game against AI ghosts, so their answers are kept. */
 const recorded: Controls = { decide: (point, st) => (recorder ? recorderControls.decide(point, st) : controls.decide(point, st)) };
-const recorderControls: Controls = { decide: (point, st) => {
-  const choice = controls.decide(point, st);
-  if (choice !== null && recorder) recorder.decisions.push([recFrame, point.key, choice]);
-  return choice;
-} };
+const recorderControls: Controls = {
+  decide: (point, st) => {
+    const choice = controls.decide(point, st);
+    if (choice !== null && recorder) {
+      // Where the move came from: the server's signature on a model's answer, else the backup rule ("f").
+      const d = scheduler.lastDecision;
+      const signed = d && d.key === point.key && d.source !== 'fallback' && d.sig && d.signedAs;
+      recorder.decisions.push([recFrame, point.key, choice, signed ? `${d.signedAs}~${d.sig}` : 'f']);
+    }
+    return choice;
+  },
+};
 
 const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
 /** The top strip, as on the cabinet: who plays Pac-Man over the score (or a status line), and the ghosts where 2UP is. */
@@ -407,6 +418,8 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   state = createGame({ pacmanControl: 'keyboard', ghostsByAI: next.lineup !== null });
   recorder = next.lineup ? new Recorder() : null;
   recFrame = 0;
+  recSteps = 0;
+  stepAcc = 0;
   log.begin(next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
   hideOverlay(overlayEl);
   dim(false);
@@ -630,7 +643,7 @@ function boardEntry(l: Lineup, score: number): BoardEntryOption | null {
   const key = boardOf(l);
   if (!key) return { kind: 'custom' };
   const place = placeFor(boards, key, score);
-  const rec = recorder?.finish(state, 'player', { pacmanControl: 'keyboard', ghostsByAI: true });
+  const rec = recorder ? { ...recorder.finish(state, 'player', { pacmanControl: 'keyboard', ghostsByAI: true, lineup: l }), fixedStep: FIXED_STEP, steps: recSteps, final: { score: state.score, lives: state.lives, level: state.level, frames: recSteps } } : undefined;
   if (place === null || !rec) return null;
   if (account.kind !== 'player') {
     return {
@@ -766,15 +779,28 @@ function tick(dt: number): void {
   clockMs += dt * 1000;
   scheduler.update(state);
   stats.beforeStep(state);
-  // Stepped with the recorded (rounded) step, so the server's replay of this game lands on the same score.
-  const stepDt = roundDt(dt);
   if (recorder) {
-    recFrame = recorder.frames.length;
-    recorder.key(recFrame, state.keyDir);
-    recorder.frames.push(stepDt);
+    // A recorded game (yours against AI ghosts) steps at a fixed 60 a second, whatever the screen's refresh rate, so
+    // the server's replay takes exactly the same steps and a long game on a fast screen is no bigger.
+    stepAcc = Math.min(stepAcc + dt, FIXED_STEP * 4);
+    while (stepAcc >= FIXED_STEP && state.status !== 'gameover') {
+      stepAcc -= FIXED_STEP;
+      recFrame = recSteps;
+      recorder.key(recFrame, state.keyDir);
+      step(state, FIXED_STEP, recorded);
+      recorder.settle(state.keyDir);
+      recSteps += 1;
+      stats.afterStep(state, FIXED_STEP);
+      if (state.status === 'playing') playT += FIXED_STEP;
+      stats.beforeStep(state);
+      scheduler.update(state);
+    }
+    for (const cue of cuesBetween(heard, state)) sound.play(cue);
+    if (state.status === 'gameover') gameOver();
+    return;
   }
+  const stepDt = roundDt(dt);
   step(state, stepDt, recorded);
-  recorder?.settle(state.keyDir);
   stats.afterStep(state, stepDt);
   for (const cue of cuesBetween(heard, state)) sound.play(cue);
   if (state.status === 'playing') playT += dt;

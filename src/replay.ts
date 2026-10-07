@@ -12,13 +12,19 @@ export interface Recording {
   model: string;
   /** Each frame's simulation step in seconds, rounded with roundDt. */
   frames: number[];
-  /** Every non-null direction Controls.decide returned: [frame, decision key, direction]. */
-  decisions: [number, string, Dir][];
+  /**
+   * Every non-null direction Controls.decide returned: [frame, decision key, direction], and in a player's game
+   * where it came from: "<model>~<server signature>" for a model's answer, "f" for the backup rule.
+   */
+  decisions: [number, string, Dir, string?][];
   /** Scheduler events for the panel: [frame, event]. */
   events: [number, RecordedEvent][];
   final: { score: number; lives: number; level: number; frames: number };
   /** A player's game: who steers Pac-Man and whether models play the ghosts. Absent: an AI playing Pac-Man against the classic ghosts. */
-  setup?: { pacmanControl: PacmanControl; ghostsByAI: boolean };
+  setup?: { pacmanControl: PacmanControl; ghostsByAI: boolean; lineup?: Record<string, string> };
+  /** A player's game steps at a fixed rate: then `frames` is empty and the game is `steps` steps of `fixedStep`. */
+  fixedStep?: number;
+  steps?: number;
   /** The player's steering whenever it changed: [frame, direction or null], set before that frame's step. */
   keys?: [number, Dir | null][];
 }
@@ -28,7 +34,7 @@ export const roundDt = (dt: number): number => Math.round(dt * 10_000) / 10_000;
 
 export class Recorder {
   readonly frames: number[] = [];
-  readonly decisions: [number, string, Dir][] = [];
+  readonly decisions: [number, string, Dir, string?][] = [];
   readonly events: [number, RecordedEvent][] = [];
   readonly keys: [number, Dir | null][] = [];
   private lastKey: Dir | null = null;
@@ -90,7 +96,12 @@ export class Replay {
     this.rec = rec;
     this.state = createGame(rec.setup ?? {});
     for (const [f, dir] of rec.keys ?? []) this.keys.set(f, dir);
-    for (const [f, key, dir] of rec.decisions) this.choices.set(`${f}|${key}`, [...(this.choices.get(`${f}|${key}`) ?? []), dir]);
+    for (const [f, key, dir] of rec.decisions) {
+      const k = `${f}|${key}`;
+      const list = this.choices.get(k);
+      if (list) list.push(dir);
+      else this.choices.set(k, [dir]);
+    }
     for (const [f, e] of rec.events) {
       const event: SchedulerEvent = e.type === 'call' ? { ...e, traceId: null } : e;
       this.eventsByFrame.set(f, [...(this.eventsByFrame.get(f) ?? []), event]);
@@ -98,7 +109,11 @@ export class Replay {
   }
 
   get done(): boolean {
-    return this.frame >= this.rec.frames.length;
+    return this.frame >= this.length;
+  }
+
+  private get length(): number {
+    return this.rec.frames.length || (this.rec.steps ?? 0);
   }
 
   /** Advances one recorded frame and returns the panel events recorded for it; once done, does nothing. */
@@ -106,7 +121,7 @@ export class Replay {
     if (this.done) return [];
     const f = this.frame;
     if (this.keys.has(f)) this.state.keyDir = this.keys.get(f)!;
-    step(this.state, this.rec.frames[f], { decide: (p) => this.choices.get(`${f}|${p.key}`)?.shift() ?? null });
+    step(this.state, this.rec.frames[f] ?? this.rec.fixedStep ?? 0, { decide: (p) => this.choices.get(`${f}|${p.key}`)?.shift() ?? null });
     this.frame += 1;
     return this.eventsByFrame.get(f) ?? [];
   }

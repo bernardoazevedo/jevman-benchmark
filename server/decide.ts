@@ -1,4 +1,5 @@
 import { clearSessionCookie, crossSite, header, json, sessionFrom, WALLET_URL, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
+import { signAnswers } from './answers.ts';
 import { endpointFor, modelFor, requestedModelFor, TYPESAFE_USD_PER_INPUT_TOKEN, type JevProvider, type JevTarget } from './jev.ts';
 import { clientIp, poolAcceptsBody, POOL_EMPTY_MESSAGE, type Pool, type VisitorLimits } from './pool.ts';
 import type { SessionData } from './session.ts';
@@ -233,6 +234,13 @@ export async function handleDecideRequest(req: HttpRequest, rawBody: string, cfg
       ...(opts.warm ? { timeoutMs: WARM_TIMEOUT_MS } : {}),
     });
     const { clearSession, ...body } = result.body as Record<string, unknown>;
+    // Sign each answer for its junction, ghost, direction and model: a high-score entry may only replay these.
+    if (!opts.warm && result.status === 200 && input && typeof input === 'object') {
+      const requested = (input as { model?: unknown; keys?: unknown }).model;
+      const model = typeof requested === 'string' ? requested : process.env.JEV_MODEL?.trim() || DEFAULT_MODEL;
+      body.signatures = signAnswers(cfg.sessionSecret, (input as { keys?: unknown }).keys, (body.answers ?? {}) as Record<string, unknown>, model);
+      body.signedAs = model;
+    }
     if (key.mode === 'pool' && access) {
       if (body.poolEmpty) access.pool.exhausted();
       access.pool.spent(typeof body.costUsd === 'number' ? body.costUsd : null);

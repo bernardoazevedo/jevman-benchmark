@@ -37,6 +37,8 @@ export interface SystemOneRequest {
   model?: ModelId;
   state: Record<string, unknown>;
   questions: Record<string, ChoiceQuestion>;
+  /** Each question's junction (decision point key), so the server can sign its answer for that junction. */
+  keys?: Record<string, string>;
 }
 
 export interface DecideResponse {
@@ -48,6 +50,9 @@ export interface DecideResponse {
   costUsd: number | null;
   /** True when costUsd is estimated from token usage (TypeSafe's API sends no cost). */
   costEstimated?: boolean;
+  /** The server's signature on each answer (by question), and the model id it signed them as. */
+  signatures?: Record<string, string>;
+  signedAs?: string;
   traceId: string | null;
 }
 
@@ -62,6 +67,9 @@ export interface Decision {
   source: 'jev' | 'fallback';
   /** The model that answered, for decisions a model made (source 'jev'). */
   model?: string;
+  /** The server's signature on this answer, and the model id it signed it as (a high-score entry replays only these). */
+  sig?: string;
+  signedAs?: string;
   reason?: string;
   /** Answer to a mid-corridor escape question rather than a junction choice. */
   escape?: boolean;
