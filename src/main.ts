@@ -5,7 +5,7 @@ import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
 import { boardLabel, clearPending, enterScore, fetchBoards, peekPending, placeFor, stashPending, type Boards } from './highscores';
-import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showInitialsEntry, showPicker, type BoardEntryOption, type Lineup, type Picker } from './overlay';
+import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showHighScores, showInitialsEntry, showPicker, type BoardEntryOption, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { renderLeaderboard } from './results';
@@ -22,7 +22,7 @@ import { GHOST_IDS, type Dir } from './types';
 import { shareText, versus } from './versus';
 import { ModelWarming } from './warming';
 import type { Community, Leaderboard } from '../shared/leaderboard';
-import { boardOf } from '../shared/lineups';
+import { BOARD_KEYS, boardOf, MIXED_LINEUP } from '../shared/lineups';
 import { DEFAULT_MODEL, modelName } from '../shared/models';
 
 const KEYS: Record<string, Dir> = {
@@ -334,7 +334,7 @@ const setPaused = (p: boolean) => {
 /** The button under the board: "Play vs AI" while watching; "New game" while your own game is paused; else out of the way. */
 function syncPlayCta(): void {
   const midGame = mode.kind === 'play' && live && !gameOverShown;
-  playCta.hidden = picker !== null || entryOpen || (mode.kind === 'play' && !(midGame && paused));
+  playCta.hidden = picker !== null || entryOpen || scoresOpen || (mode.kind === 'play' && !(midGame && paused));
   playLabel.textContent = midGame ? 'New game' : 'Play vs AI';
 }
 const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
@@ -435,6 +435,8 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
 let watchToken = 0;
 /** The initials card after signing in is open: like the picker, nothing else takes the board until it closes. */
 let entryOpen = false;
+/** The high-score boards are open over the board (from HIGH SCORE). */
+let scoresOpen = false;
 
 /**
  * A chip under the board (or Watch in the leaderboard): that model's recorded benchmark game. The chip already
@@ -442,6 +444,7 @@ let entryOpen = false;
  */
 function watch(model: string, confirmed = false): void {
   if (entryOpen) return; // finish (or close) the initials first
+  if (scoresOpen) closeScores();
   if (mode.kind === 'recording' && mode.model === model) return;
   if (!confirmed && mode.kind === 'play' && live && !gameOverShown) return askToLeave(model);
   notice(null);
@@ -482,7 +485,7 @@ const costNote = (): string => {
 
 /** "▶ Play against the AIs": who plays the ghosts, then Start. */
 function openPicker(): void {
-  if (picker || entryOpen) return;
+  if (picker || entryOpen || scoresOpen) return;
   watchToken += 1; // a recording still loading must not replace the picker when it arrives
   setPlate();
   held = true;
@@ -642,6 +645,53 @@ function highScore(): { score: number; who: string } {
   return hi;
 }
 
+/** HIGH SCORE, clicked: the players' boards over the board, opened on the lineup last picked; the game waits meanwhile. */
+function openScores(): void {
+  if (picker || entryOpen || scoresOpen || !overlayEl.hidden) return;
+  scoresOpen = true;
+  held = true;
+  dim(true);
+  tvEl.classList.add('scores-open');
+  syncPlayCta();
+  const best = board?.entries.reduce<{ score: number; name: string } | null>((b, e) => ((e.bestScore ?? 0) > (b?.score ?? 0) ? { score: e.bestScore!, name: e.name } : b), null);
+  const view = showHighScores(overlayEl, {
+    boards: () => boards,
+    boardKeys: BOARD_KEYS,
+    initial: boardOf(lineup) ?? 'mixed',
+    toBeat: best ? { name: best.name, score: best.score } : { name: 'jev 1.13', score: TOP_RECORDED_SCORE },
+    onPlay: (key) => {
+      lineup = key === 'mixed' ? { ...MIXED_LINEUP } : (Object.fromEntries(GHOST_IDS.map((g) => [g, key])) as Lineup);
+      saveLineup(lineup);
+      closeScores();
+      openPicker();
+    },
+    onClose: closeScores,
+  });
+  void fetchBoards().then((b) => {
+    if (b && scoresOpen) {
+      boards = b;
+      view.refresh();
+    }
+  });
+}
+function closeScores(): void {
+  if (!scoresOpen) return;
+  scoresOpen = false;
+  held = false;
+  hideOverlay(overlayEl);
+  dim(false);
+  tvEl.classList.remove('scores-open');
+  syncPlayCta();
+}
+const hiCell = $('.arcade-top .mid');
+hiCell.addEventListener('click', openScores);
+hiCell.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    openScores();
+  }
+});
+
 /** Game over against a lineup: on its board's top ten, enter initials (signed in) or sign in for it; or a custom mix's note. */
 function boardEntry(l: Lineup, score: number): BoardEntryOption | null {
   const key = boardOf(l);
@@ -701,6 +751,7 @@ playCta.addEventListener('click', openPicker);
 document.addEventListener('click', (e) => {
   const t = e.target as Element;
   if (picker && t.isConnected && !t.closest('.overlay .card, #play-cta')) closePicker();
+  if (scoresOpen && t.isConnected && !t.closest('.overlay .card, .arcade-top .mid')) closeScores();
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && live && !paused && overlayEl.hidden) setPaused(true);
@@ -732,6 +783,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape' && picker) return closePicker();
+  if (e.key === 'Escape' && scoresOpen) return closeScores();
   const k = e.key.toLowerCase();
   if (k === 'p') togglePause();
   else if (k === 'm') toggleSound();

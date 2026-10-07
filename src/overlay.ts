@@ -215,6 +215,61 @@ export function showInitialsEntry(root: HTMLElement, o: { score: number; entry: 
   show(root, card);
 }
 
+/**
+ * The players' high-score boards, opened from HIGH SCORE: a tab per lineup, the AI's best game pinned above as the
+ * one to beat (a different game, so it is pinned rather than ranked), the top ten, and a way to play for a place.
+ */
+export function showHighScores(root: HTMLElement, o: { boards: () => Boards | null; boardKeys: readonly string[]; initial: string; toBeat: { name: string; score: number } | null; onPlay: (board: string) => void; onClose: () => void }): { refresh: () => void } {
+  const card = el('div', undefined, 'card arc over hsc');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', 'High scores');
+  const close = el('button', 'X', 'x');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', o.onClose);
+  const tabs = el('div', undefined, 'opts');
+  tabs.setAttribute('role', 'tablist');
+  const body = el('div', undefined, 'hs-body');
+  let current = o.boardKeys.includes(o.initial) ? o.initial : o.boardKeys[0]!;
+  const render = () => {
+    tabs.replaceChildren(
+      ...o.boardKeys.map((k) => {
+        const b = el('button', boardLabel(k));
+        b.type = 'button';
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-pressed', String(k === current));
+        b.addEventListener('click', () => {
+          current = k;
+          render();
+        });
+        return b;
+      }),
+    );
+    const boards = o.boards();
+    const entries = boards?.[current] ?? [];
+    const parts: HTMLElement[] = [];
+    if (o.toBeat) {
+      const beat = el('p', undefined, 'tobeat');
+      beat.append(el('span', 'To beat'), el('span', `${o.toBeat.name} · ${o.toBeat.score.toLocaleString('en-US')}`));
+      parts.push(beat);
+    }
+    if (entries.length) parts.push(boardLines(entries, 10));
+    else parts.push(el('p', boards ? 'No scores yet. Be the first!' : 'High scores are loading…', 'tap'));
+    const play = el('button', undefined, 'press');
+    play.type = 'button';
+    const tri = el('span', undefined, 'tri');
+    tri.setAttribute('aria-hidden', 'true');
+    play.append(tri, el('span', `Play vs ${boardLabel(current).replace(/^All /, '')}`));
+    play.addEventListener('click', () => o.onPlay(current));
+    parts.push(play);
+    body.replaceChildren(...parts);
+  };
+  render();
+  card.append(close, el('p', 'High scores', 'over-title hs-title'), el('p', 'Players against the AI ghosts, one board per lineup', 'tap'), tabs, body);
+  show(root, card, close);
+  return { refresh: render };
+}
+
 /** A model's name on the arcade roster: short, and GPT-6 Luna as just Luna (its logo says OpenAI). */
 const rosterName = (model: string) => short(model).replace(/^GPT-6 /, '');
 
