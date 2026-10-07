@@ -45,8 +45,11 @@ export class Pool {
   private checkedAt = Number.NEGATIVE_INFINITY;
   private pending: Promise<PoolStatus> | null = null;
   private readonly refreshMs: number;
+  // A plain field, not a constructor parameter property: the server runs as stripped TypeScript, which has none.
+  private readonly deps: PoolDeps;
 
-  constructor(private readonly deps: PoolDeps) {
+  constructor(deps: PoolDeps) {
+    this.deps = deps;
     this.refreshMs = deps.refreshMs ?? POOL_REFRESH_MS;
   }
 
@@ -127,10 +130,13 @@ const MAX_TRACKED = 50_000;
 export class VisitorLimits {
   private readonly buckets = new Map<string, { tokens: number; at: number }>();
 
-  constructor(
-    private readonly settings: LimitSettings = DEFAULT_LIMITS,
-    private readonly now: () => number = () => Date.now(),
-  ) {}
+  private readonly settings: LimitSettings;
+  private readonly now: () => number;
+
+  constructor(settings: LimitSettings = DEFAULT_LIMITS, now: () => number = () => Date.now()) {
+    this.settings = settings;
+    this.now = now;
+  }
 
   /** Takes one request from the visitor's allowance, or says it is sending too fast. */
   take(visitor: string): LimitVerdict {
