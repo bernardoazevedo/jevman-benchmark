@@ -20,7 +20,7 @@ export function renderLeaderboard(table: HTMLTableElement, sub: HTMLElement, boa
   const all = [...board.entries, ...(community?.entries ?? [])];
   const top = Math.max(1, ...all.map((e) => e.meanScore));
   const date = new Date(board.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  sub.textContent = `${board.settings.gamesPerModel} games per model against the classic ghosts. Last run ${date}.`;
+  sub.textContent = `${board.settings.gamesPerModel} games per model against the classic ghosts, last run on ${date}.`;
 
   const head = el('thead');
   const hr = el('tr');

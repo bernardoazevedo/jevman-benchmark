@@ -104,7 +104,7 @@ export function takeAuthError(): string | null {
 /** The notice the account bar starts with: a sign-in error, else a warning that /api/me was unreachable. */
 export function accountNotice(me: Me, authError: string | null, demo: boolean): string | undefined {
   if (authError) return authError;
-  if (me.unavailable) return demo ? "Couldn't reach the server — showing the recorded demo" : "Couldn't reach the server";
+  if (me.unavailable) return demo ? "Couldn't reach the server, so this is the recorded demo" : "Couldn't reach the server";
   return undefined;
 }
 
@@ -138,7 +138,7 @@ function closeMenusOnOutsideClick(): void {
 
 /** The notice for a player whose Opper wallet ran dry (HTTP 402 from /api/decide). */
 export function walletNotice(walletUrl: string): { notice: string; noticeLink: string } {
-  return { notice: 'Your Opper wallet is empty — top up to keep playing', noticeLink: httpsUrl(walletUrl) };
+  return { notice: 'Your Opper wallet is empty. Top it up to keep playing.', noticeLink: httpsUrl(walletUrl) };
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
@@ -194,7 +194,7 @@ export function renderDrawerAccount(root: HTMLElement, view: AccountView): void 
     wallet.href = httpsUrl(me.walletUrl);
     wallet.target = '_blank';
     wallet.rel = 'noopener';
-    const out = el('button', 'Log out', 'row');
+    const out = el('button', 'Sign out', 'row');
     out.type = 'button';
     out.addEventListener('click', () => void signOut());
     root.replaceChildren(wallet, out, foot(me.user?.email ?? me.user?.name ?? 'Opper user', el('b', 'Signed in', 'signed-in')));

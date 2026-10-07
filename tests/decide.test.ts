@@ -119,8 +119,8 @@ describe('handleDecide', () => {
 describe('player keys', () => {
   const upstream = (status: number) => vi.fn<typeof fetch>(async () => new Response('{"error":"x"}', { status }));
   it.each([
-    [401, 401, { error: 'Your Opper sign-in has expired — sign in again', signedOut: true, clearSession: true }],
-    [402, 402, { error: 'Your Opper wallet is empty — top up to keep playing', walletUrl: 'https://platform.opper.ai/wallet' }],
+    [401, 401, { error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true, clearSession: true }],
+    [402, 402, { error: 'Your Opper wallet is empty. Top it up to keep playing.', walletUrl: 'https://platform.opper.ai/wallet' }],
     [403, 403, { error: 'jev 1.13 is not enabled for your Opper account' }],
   ])('maps upstream %i to %i for a player key', async (up, status, bodyOut) => {
     const res = await handleDecide(body, deps(upstream(up), { keyMode: 'player' }));
@@ -217,7 +217,7 @@ describe('handleDecideRequest', () => {
   it('turns clearSession into a Set-Cookie that clears the session, and keeps it out of the body', async () => {
     const r = await run(post({ cookie: playerCookie() }), JSON.stringify(body), DEV, vi.fn<typeof fetch>(async () => new Response('{}', { status: 401 })));
     expect(r.status).toBe(401);
-    expect(JSON.parse(r.body)).toEqual({ error: 'Your Opper sign-in has expired — sign in again', signedOut: true });
+    expect(JSON.parse(r.body)).toEqual({ error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true });
     expect(String(r.headers['Set-Cookie'])).toMatch(new RegExp(`^${SESSION_COOKIE}=; Max-Age=0`));
   });
 

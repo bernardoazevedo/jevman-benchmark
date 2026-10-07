@@ -99,8 +99,8 @@ export async function handleDecide(input: unknown, deps: DecideDeps): Promise<De
       const error = redact(`${label} returned HTTP ${res.status}: ${upstreamMessage(redact(text))}`);
       log(`${tag} ${actors} failed after ${latencyMs} ms — ${error}`);
       if (deps.keyMode === 'player') {
-        if (res.status === 401) return { status: 401, body: { error: 'Your Opper sign-in has expired — sign in again', signedOut: true, clearSession: true } };
-        if (res.status === 402) return { status: 402, body: { error: 'Your Opper wallet is empty — top up to keep playing', walletUrl: WALLET_URL } };
+        if (res.status === 401) return { status: 401, body: { error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true, clearSession: true } };
+        if (res.status === 402) return { status: 402, body: { error: 'Your Opper wallet is empty. Top it up to keep playing.', walletUrl: WALLET_URL } };
       }
       // The free credits ran out (or their key was revoked): the page asks the visitor to sign in.
       if (deps.keyMode === 'pool' && (res.status === 401 || res.status === 402)) return poolEmpty(402);

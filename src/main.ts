@@ -77,7 +77,7 @@ const sound = new Sound();
 const showSound = () => {
   soundBtn.classList.toggle('off', !sound.enabled);
   soundBtn.setAttribute('aria-pressed', String(sound.enabled));
-  soundBtn.title = sound.enabled ? 'Mute (M)' : 'Sound on (M)';
+  soundBtn.setAttribute('aria-label', sound.enabled ? 'Mute (M)' : 'Sound on (M)');
 };
 showSound();
 const toggleSound = () => {
@@ -204,12 +204,12 @@ const hooks: TransportHooks = {
     if (poolNoticeShown) return;
     poolNoticeShown = true;
     showAccount({ kind: 'pool-empty', me: { ...me, mode: 'none', pool: { open: false, remainingUsd: 0 } } });
-    notice(`${POOL_EMPTY_NOTICE} The AIs fall back to a simple rule until then.`);
+    notice(`${POOL_EMPTY_NOTICE} Until you do, the AIs fall back to a simple rule.`);
   },
   onSignedOut: () => {
     canUseAI = me.mode === 'pool';
     showAccount({ kind: me.pool ? 'pool' : 'signed-out', me });
-    notice('Your Opper sign-in has expired. Log in again to keep playing on your account.');
+    notice('Your Opper sign-in has expired. Sign in again to keep playing on your account.');
   },
   onWalletEmpty: (url) => {
     showAccount({ ...account, ...walletNotice(url) });
@@ -306,7 +306,6 @@ function setPlate(label: string | null = null): void {
   const lineup = mode.kind === 'play' ? mode.lineup : null;
   const models = lineup ? [...new Set(GHOST_IDS.map((g) => lineup[g]))] : [];
   ghostsEl.textContent = !lineup ? 'Classic' : models.length === 1 ? short(models[0]!) : 'Mixed AIs';
-  ghostsEl.title = lineup ? lineupNames(lineup) : 'The arcade\'s own scripted ghosts';
 }
 
 function renderChips(): void {
@@ -474,11 +473,11 @@ function askToLeave(model: string): void {
 }
 
 const costNote = (): string => {
-  if (!canUseAI) return `${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Log in to play on your own Opper account, about 2¢ a game.`;
-  if (account.kind === 'player') return 'On your Opper account, about 2¢ a game.';
+  if (!canUseAI) return `${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Sign in to play on your own Opper account, at about 2¢ a game.`;
+  if (account.kind === 'player') return 'This plays on your Opper account, at about 2¢ a game.';
   if (account.kind === 'dev') return 'On the local key from .env.';
   const left = poolAmount(account.me.pool?.remainingUsd ?? null);
-  return `Free while the shared credits last${left ? ` (${left} left)` : ''}. About 2¢ a game.`;
+  return `Free while the shared credits last${left ? ` (${left} left)` : ''}, at about 2¢ a game.`;
 };
 
 /** "▶ Play against the AIs": who plays the ghosts, then Start. */
@@ -682,7 +681,7 @@ function togglePause(): void {
     void warming.warmAll(() => models, () => {}).then((failed) => {
       if (id !== gameId) return;
       setPlate();
-      if (failed.length) return notice(problemOf(failed) ?? 'The AIs did not wake up, so the game stays paused. Press play to try again.');
+      if (failed.length) return notice(problemOf(failed) ?? 'The AIs did not wake up, so the game stays paused. Click the board or press P to try again.');
       setPaused(false);
     });
     return;

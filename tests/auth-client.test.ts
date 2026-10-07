@@ -105,7 +105,7 @@ describe('accountNotice', () => {
   });
 
   it('says the server could not be reached when /api/me failed', () => {
-    expect(accountNotice(me({ unavailable: true }), null, true)).toBe("Couldn't reach the server — showing the recorded demo");
+    expect(accountNotice(me({ unavailable: true }), null, true)).toBe("Couldn't reach the server, so this is the recorded demo");
     expect(accountNotice(me({ unavailable: true }), null, false)).toBe("Couldn't reach the server");
   });
 
@@ -118,7 +118,7 @@ describe('accountNotice', () => {
 describe('walletNotice', () => {
   it('asks the player to top up, linking to the wallet', () => {
     expect(walletNotice('https://platform.opper.ai/wallet?x=1')).toEqual({
-      notice: 'Your Opper wallet is empty — top up to keep playing',
+      notice: 'Your Opper wallet is empty. Top it up to keep playing.',
       noticeLink: 'https://platform.opper.ai/wallet?x=1',
     });
   });

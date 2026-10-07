@@ -156,7 +156,7 @@ export class ActivityLog {
 
   private row(e: Entry, fresh = false): HTMLLIElement {
     if (e.kind === 'sep') return el('li', e.text, 'ev sep');
-    const li = el('li', undefined, `ev ${e.kind}${e.kind === 'move' ? '' : ' key'}${fresh ? ' new' : ''}`);
+    const li = el('li', undefined, `ev ${e.kind}${e.kind === 'death' || e.kind === 'gain' ? ' key' : ''}${fresh ? ' new' : ''}`);
     const ic = el('span', undefined, 'ic');
     const tx = el('span', undefined, 'tx');
     let meta = '';
@@ -224,7 +224,7 @@ export class ActivityLog {
         return d;
       }),
     );
-    if (this.droppedEl) this.droppedEl.textContent = t.dropped ? `${t.dropped} late answers skipped.` : '';
+    if (this.droppedEl) this.droppedEl.textContent = t.dropped ? `${t.dropped} late ${t.dropped === 1 ? 'answer' : 'answers'} skipped.` : '';
   }
 
   private fillList(): void {
@@ -242,7 +242,7 @@ export class ActivityLog {
     if (!this.list) {
       const head = el('div', undefined, 'lg lg-head');
       this.titleEl = el('h3', undefined, 'lg-title');
-      const close = el('button', '×', 'close');
+      const close = el('button', 'X', 'close');
       close.type = 'button';
       close.setAttribute('aria-label', 'Close the activity log');
       close.addEventListener('click', () => this.setOpen(false));

@@ -172,7 +172,7 @@ export type BoardEntryOption =
 function boardBlock(o: BoardEntryOption): HTMLElement {
   const box = el('div', undefined, 'made');
   if (o.kind === 'custom') {
-    box.append(el('p', 'Custom lineups go on no board. Pick a lineup to compete.', 'tap'));
+    box.append(el('p', 'Only the preset lineups have a high-score board, so pick one to compete.', 'tap'));
     return box;
   }
   const label = boardLabel(o.board);
@@ -184,7 +184,7 @@ function boardBlock(o: BoardEntryOption): HTMLElement {
     tri.setAttribute('aria-hidden', 'true');
     b.append(tri, el('span', 'Sign in to enter your initials'));
     b.addEventListener('click', o.onSignIn);
-    box.append(b, el('p', 'Free Opper account. Your game waits here.', 'tap'));
+    box.append(b, el('p', 'An Opper account is free, and your game waits here while you sign in.', 'tap'));
     return box;
   }
   box.append(
@@ -203,7 +203,7 @@ export function showInitialsEntry(root: HTMLElement, o: { score: number; entry: 
   const card = el('div', undefined, 'card arc over');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Enter your initials');
-  const close = el('button', '✕', 'x');
+  const close = el('button', 'X', 'x');
   close.type = 'button';
   close.setAttribute('aria-label', 'Close');
   close.addEventListener('click', o.onDone);
@@ -226,7 +226,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   const card = el('div', undefined, 'card arc');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Who plays the ghosts?');
-  const close = el('button', '✕', 'x');
+  const close = el('button', 'X', 'x');
   close.type = 'button';
   close.setAttribute('aria-label', 'Close');
   close.addEventListener('click', o.onBack);
@@ -246,7 +246,6 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
         const b = el('button');
         b.type = 'button';
         b.style.setProperty('--gc', ARCADE_FILL[g]);
-        b.title = `Switch ${GHOST_NAMES[g]}'s AI model`;
         b.setAttribute('aria-label', `${GHOST_NAMES[g]}: ${modelName(lineup[g])}. Switch model`);
         const md = el('span', undefined, 'md');
         const logo = logoFor(lineup[g]);
@@ -280,7 +279,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   const renderBoard = () => {
     const key = boardOf(o.lineup());
     const boards = o.boards();
-    if (!key) return hs.replaceChildren(el('p', 'High scores', 'colh'), el('p', 'Custom lineups go on no board', 'tap'));
+    if (!key) return hs.replaceChildren(el('p', 'High scores', 'colh'), el('p', 'Only the preset lineups have a board', 'tap'));
     const entries = boards?.[key] ?? [];
     hs.replaceChildren(el('p', `High scores · ${boardLabel(key)}`, 'colh'), entries.length ? boardLines(entries, 5) : el('p', boards ? 'No scores yet. Be the first!' : 'High scores are loading…', 'tap'));
   };
@@ -307,7 +306,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     start.addEventListener('click', o.onStart);
     card.append(start, el('p', o.costNote, 'cost'));
   } else {
-    start = press('Log in to play');
+    start = press('Sign in to play');
     start.disabled = !o.loginAvailable;
     start.addEventListener('click', o.onLogin);
     const classic = el('button', 'Play the classic ghosts instead (free)', 'back');
