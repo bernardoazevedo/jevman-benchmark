@@ -23,7 +23,7 @@ async function poolWith(me: unknown): Promise<Pool> {
   return pool;
 }
 
-const access = (pool: Pool, limits = new VisitorLimits({ dailyUsd: 1, ratePerSec: 8, burst: 40 }, () => 0)): PoolAccess => ({ pool, limits, trustedProxies: 0 });
+const access = (pool: Pool, limits = new VisitorLimits({ ratePerSec: 8, burst: 40 }, () => 0)): PoolAccess => ({ pool, limits, trustedProxies: 0 });
 
 describe('statusFromMe', () => {
   it('is open while the organization balance is above zero and spending is not blocked', () => {
@@ -95,24 +95,13 @@ describe('Pool', () => {
 describe('VisitorLimits', () => {
   it('allows a burst, then the sustained rate', () => {
     let now = 0;
-    const limits = new VisitorLimits({ dailyUsd: 1, ratePerSec: 2, burst: 3 }, () => now);
+    const limits = new VisitorLimits({ ratePerSec: 2, burst: 3 }, () => now);
     expect([1, 2, 3].map(() => limits.take('a'))).toEqual(['ok', 'ok', 'ok']);
     expect(limits.take('a')).toBe('rate');
     expect(limits.take('b')).toBe('ok'); // another visitor has their own allowance
     now += 500;
     expect(limits.take('a')).toBe('ok');
     expect(limits.take('a')).toBe('rate');
-  });
-
-  it("stops a visitor at their daily amount until the next UTC day", () => {
-    let now = Date.UTC(2026, 9, 7, 23, 59);
-    const limits = new VisitorLimits({ dailyUsd: 0.05, ratePerSec: 100, burst: 100 }, () => now);
-    limits.spent('a', 0.03);
-    expect(limits.take('a')).toBe('ok');
-    limits.spent('a', 0.03);
-    expect(limits.take('a')).toBe('daily');
-    now = Date.UTC(2026, 9, 8, 0, 1);
-    expect(limits.take('a')).toBe('ok');
   });
 });
 
@@ -166,16 +155,13 @@ describe('the free credits in /api/decide', () => {
     expect(rejectDecideRequest(post({ cookie: playerCookie() }), cfg, undefined, access(pool))).toBeNull();
   });
 
-  it('calls the model with the pool key, then counts the cost against the pool and the visitor', async () => {
+  it('calls the model with the pool key, then counts the cost against the pool', async () => {
     const pool = await poolWith({ blocked: false, balance: { balance_cents: 100 } });
-    const limits = new VisitorLimits({ dailyUsd: 0.003, ratePerSec: 8, burst: 40 }, () => 0);
     const fetchMock = decideOk('0.002');
-    const r = await handleDecideRequest(post(), JSON.stringify(body), cfg, undefined, { fetch: fetchMock, now: () => 0 }, {}, access(pool, limits));
+    const r = await handleDecideRequest(post(), JSON.stringify(body), cfg, undefined, { fetch: fetchMock, now: () => 0 }, {}, access(pool));
     expect(r.status).toBe(200);
     expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization).toBe('Bearer op-pool');
     expect(pool.current().remainingUsd).toBeCloseTo(0.998);
-    limits.spent('10.0.0.1', 0.002); // a second call's worth: over the visitor's 0.003 for today
-    expect(poolLimitRequest(post(), cfg, undefined, access(pool, limits))?.status).toBe(429);
   });
 
   it('closes the pool when Opper refuses a call for money', async () => {
@@ -198,7 +184,7 @@ describe('the free credits in /api/decide', () => {
 
   it('slows down a visitor who sends faster than a game does', async () => {
     const pool = await poolWith({ blocked: false, balance: { balance_cents: 1000 } });
-    const a = access(pool, new VisitorLimits({ dailyUsd: 1, ratePerSec: 1, burst: 2 }, () => 0));
+    const a = access(pool, new VisitorLimits({ ratePerSec: 1, burst: 2 }, () => 0));
     expect(poolLimitRequest(post(), cfg, undefined, a)).toBeNull();
     expect(poolLimitRequest(post(), cfg, undefined, a)).toBeNull();
     expect(poolLimitRequest(post(), cfg, undefined, a)?.status).toBe(429);

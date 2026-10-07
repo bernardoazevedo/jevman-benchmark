@@ -4,7 +4,7 @@ import { handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigu
 import { normalizeBasePath } from './base-path.ts';
 import { handleDecideRequest, poolLimitRequest, rejectDecideRequest, resolveKey, type PoolAccess } from './decide.ts';
 import { devTargetFromEnv, type JevTarget } from './jev.ts';
-import { limitsFromEnv, MAX_POOL_BODY_BYTES, poolFromEnv, trustedProxiesFromEnv, VisitorLimits } from './pool.ts';
+import { MAX_POOL_BODY_BYTES, poolFromEnv, trustedProxiesFromEnv, VisitorLimits } from './pool.ts';
 
 /** Largest /api/decide body read; a game state plus five questions is a few KB. */
 export const MAX_BODY_BYTES = 256 * 1024;
@@ -129,7 +129,7 @@ function readBody(req: IncomingMessage, limit: number): Promise<string | null> {
 /** The free credits, when OPPER_POOL_API_KEY is set: signed-out visitors play on it until its balance runs out. */
 export function poolAccessFromEnv(env: Record<string, string>, cfg: AuthConfig, log: (msg: string) => void): PoolAccess | undefined {
   const pool = poolFromEnv(env, cfg.opperUrl, log);
-  return pool ? { pool, limits: new VisitorLimits(limitsFromEnv(env)), trustedProxies: trustedProxiesFromEnv(env) } : undefined;
+  return pool ? { pool, limits: new VisitorLimits(), trustedProxies: trustedProxiesFromEnv(env) } : undefined;
 }
 
 /**

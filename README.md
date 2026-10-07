@@ -73,11 +73,11 @@ Opper account, as before. There is nothing to manage here: the key's organizatio
 key its own Opper organization and top that up whenever you like. The server reads the balance from Opper
 (`GET /v3/me`, every 30 s, and subtracts each call's cost in between), and Opper itself stops the key at zero.
 
-The pool pays only for what a game sends: requests of at most 16 KB and five questions, at most 8 a second per
-visitor (a game against four AI ghosts makes about 4), and `JEV_POOL_VISITOR_DAILY_USD` (default `1`) of pool money
-per visitor per UTC day, after which they too are asked to sign in. Visitors are told apart by IP address; behind
-proxies that append to `X-Forwarded-For`, set `JEV_TRUSTED_PROXIES` to how many (default `2` in production: CloudFront
-and the load balancer, else `0`). These limits are kept in memory per server; the balance is the hard limit.
+The pool pays only for what a game sends: requests of at most 16 KB and five questions, and at most 8 a second per
+visitor (a game against four AI ghosts makes about 4), so a script can't drain it in minutes. Visitors are told apart by
+IP address; behind proxies that append to `X-Forwarded-For`, set `JEV_TRUSTED_PROXIES` to how many (default `2` in
+production: CloudFront and the load balancer, else `0`). The rate limit is kept in memory per server; the balance is
+the hard limit.
 
 ### Which key is used
 

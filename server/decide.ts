@@ -17,7 +17,7 @@ export interface PoolAccess {
 }
 
 /** The answer that tells the page the free credits can't pay (any more): sign in to play on your own account. */
-const poolEmpty = (status: number, error = POOL_EMPTY_MESSAGE): DecideResult => ({ status, body: { error, signedOut: true, poolEmpty: true } });
+const poolEmpty = (status: number): DecideResult => ({ status, body: { error: POOL_EMPTY_MESSAGE, signedOut: true, poolEmpty: true } });
 
 export interface DecideDeps {
   apiKey: string | undefined;
@@ -185,18 +185,11 @@ export function rejectDecideRequest(req: HttpRequest, cfg: AuthConfig, devKey: J
   return null;
 }
 
-/**
- * Fair use of the free credits, checked once per request before its body is read: 429 when a visitor sends faster than
- * a game does, or has used their share for today (then, like an empty pool, the page asks them to sign in).
- */
+/** Fair use of the free credits, checked once per request before its body is read: 429 when a visitor sends faster than a game does. */
 export function poolLimitRequest(req: HttpRequest, cfg: AuthConfig, devKey: JevTarget | undefined, access: PoolAccess | undefined): HttpResponse | null {
   if (!access || resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl, access.pool)?.mode !== 'pool') return null;
   const verdict = access.limits.take(clientIp(req, access.trustedProxies));
   if (verdict === 'rate') return json(429, { error: 'Too many requests for the free credits; slow down a little' }, [], { 'Retry-After': '1' });
-  if (verdict === 'daily') {
-    const r = poolEmpty(429, "You've used today's share of the free credits. Sign in with Opper to keep playing on your own account.");
-    return json(r.status, r.body);
-  }
   return null;
 }
 
@@ -242,9 +235,7 @@ export async function handleDecideRequest(req: HttpRequest, rawBody: string, cfg
     const { clearSession, ...body } = result.body as Record<string, unknown>;
     if (key.mode === 'pool' && access) {
       if (body.poolEmpty) access.pool.exhausted();
-      const cost = typeof body.costUsd === 'number' ? body.costUsd : null;
-      access.pool.spent(cost);
-      access.limits.spent(clientIp(req, access.trustedProxies), cost);
+      access.pool.spent(typeof body.costUsd === 'number' ? body.costUsd : null);
     }
     return json(result.status, body, clearSession ? [clearSessionCookie(cfg)] : []);
   } catch (err) {

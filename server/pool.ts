@@ -111,24 +111,20 @@ export function poolFromEnv(env: Record<string, string | undefined>, opperUrl: s
 }
 
 /**
- * Fair use of the pool, per visitor (IP address): a request rate that fits a real game, and a daily amount. They are
- * kept in memory, so each server counts on its own; the pool's own balance is the hard limit.
+ * Fair use of the pool, per visitor (IP address): a request rate that fits a real game, so a script can't drain it in
+ * minutes. Kept in memory, so each server counts on its own; the pool's own balance is the hard limit.
  */
 export interface LimitSettings {
-  /** USD of pool money one visitor can use per UTC day. */
-  dailyUsd: number;
   /** Requests per second, sustained, and the burst on top. A game against four AI ghosts makes about four a second. */
   ratePerSec: number;
   burst: number;
 }
 
-export const DEFAULT_LIMITS: LimitSettings = { dailyUsd: 1, ratePerSec: 8, burst: 40 };
-export type LimitVerdict = 'ok' | 'rate' | 'daily';
+export const DEFAULT_LIMITS: LimitSettings = { ratePerSec: 8, burst: 40 };
+export type LimitVerdict = 'ok' | 'rate';
 const MAX_TRACKED = 50_000;
 
 export class VisitorLimits {
-  private day = '';
-  private readonly spentToday = new Map<string, number>();
   private readonly buckets = new Map<string, { tokens: number; at: number }>();
 
   constructor(
@@ -136,18 +132,8 @@ export class VisitorLimits {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  private rollDay(): void {
-    const day = new Date(this.now()).toISOString().slice(0, 10);
-    if (day !== this.day) {
-      this.day = day;
-      this.spentToday.clear();
-    }
-  }
-
-  /** Takes one request from the visitor's allowance, or says which limit it hit. */
+  /** Takes one request from the visitor's allowance, or says it is sending too fast. */
   take(visitor: string): LimitVerdict {
-    this.rollDay();
-    if ((this.spentToday.get(visitor) ?? 0) >= this.settings.dailyUsd) return 'daily';
     const now = this.now();
     if (this.buckets.size > MAX_TRACKED) this.buckets.clear();
     const b = this.buckets.get(visitor) ?? { tokens: this.settings.burst, at: now };
@@ -158,25 +144,6 @@ export class VisitorLimits {
     b.tokens -= 1;
     return 'ok';
   }
-
-  spent(visitor: string, costUsd: number | null): void {
-    if (costUsd === null || !Number.isFinite(costUsd) || costUsd <= 0) return;
-    this.rollDay();
-    if (this.spentToday.size > MAX_TRACKED) this.spentToday.clear();
-    this.spentToday.set(visitor, (this.spentToday.get(visitor) ?? 0) + costUsd);
-  }
-}
-
-export function limitsFromEnv(env: Record<string, string | undefined>): LimitSettings {
-  const num = (v: string | undefined, fallback: number) => {
-    const n = Number(v);
-    return v !== undefined && v.trim() !== '' && Number.isFinite(n) && n > 0 ? n : fallback;
-  };
-  return {
-    dailyUsd: num(env.JEV_POOL_VISITOR_DAILY_USD, DEFAULT_LIMITS.dailyUsd),
-    ratePerSec: DEFAULT_LIMITS.ratePerSec,
-    burst: DEFAULT_LIMITS.burst,
-  };
 }
 
 /**

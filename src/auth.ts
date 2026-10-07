@@ -116,9 +116,24 @@ export const poolAmount = (usd: number | null): string | null => (usd === null ?
 
 /** Updates the free-credits amount in the header in place (no re-render, so nothing is announced). */
 export function updatePoolAmount(root: HTMLElement, usd: number | null): void {
-  const b = root.querySelector('.credits:not(.empty) b');
+  const credits = root.querySelector<HTMLElement>('.credits:not(.empty)');
   const amount = poolAmount(usd);
-  if (b && amount && b.textContent !== amount) b.textContent = amount;
+  if (credits && amount && credits.textContent !== amount) {
+    credits.textContent = amount;
+    credits.setAttribute('aria-label', `${amount} free credits. ${credits.dataset.tip ?? ''}`);
+  }
+}
+
+/** Closes a signed-in player's menu when the page is clicked anywhere else (registered once, on first render). */
+let menuCloser = false;
+function closeMenusOnOutsideClick(): void {
+  if (menuCloser) return;
+  menuCloser = true;
+  document.addEventListener('click', (e) => {
+    for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.user-menu[open]')) {
+      if (!menu.contains(e.target as Node)) menu.open = false;
+    }
+  });
 }
 
 /** The notice for a player whose Opper wallet ran dry (HTTP 402 from /api/decide). */
@@ -152,33 +167,36 @@ export function renderAccount(root: HTMLElement, view: AccountView): void {
   // With a notice, "Try again" takes the place of the view's own sign-in button.
   const retry = Boolean(view.notice) && view.kind !== 'player';
   if (view.kind === 'player') {
+    // As on AI Roundtable: an initial, the name, and a menu with the wallet and signing out.
     const who = me.user?.name ?? me.user?.email ?? 'Opper user';
-    const p = el('p', `Signed in as ${who}`, 'status');
-    p.title = `${me.projectName ? `Project ${me.projectName}. ` : ''}The AI plays live; calls bill your Opper wallet.`;
-    text.append(p);
-    const wallet = el('a', 'Wallet ↗', 'button');
+    const menu = el('details', undefined, 'user-menu');
+    const summary = el('summary');
+    summary.title = `${me.projectName ? `Project ${me.projectName}. ` : ''}You play on your own Opper account.`;
+    summary.append(el('span', who.trim().charAt(0).toUpperCase() || '?', 'avatar'), el('span', who, 'name'), el('span', '', 'chevron'));
+    const list = el('div', undefined, 'menu');
+    const wallet = el('a', 'Wallet ↗');
     wallet.href = me.walletUrl;
     wallet.target = '_blank';
     wallet.rel = 'noopener';
     const out = el('button', 'Sign out');
+    out.type = 'button';
     out.addEventListener('click', () => void signOut());
-    actions.append(wallet, out);
-  } else if (view.kind === 'pool') {
-    // Signed out on the free credits: the only difference from signed in is this counter in place of the name.
-    const amount = poolAmount(me.pool?.remainingUsd ?? null);
-    const p = el('p', undefined, 'status credits');
-    p.append(el('span', undefined, 'dot'), el('b', amount ?? 'Free'), el('span', amount ? ' free credits' : ' credits', 'label'));
-    p.title = 'Shared free credits: anyone can play until they run out. Sign in to play on your own Opper account instead.';
+    list.append(wallet, out);
+    menu.append(summary, list);
+    text.append(menu);
+    closeMenusOnOutsideClick();
+  } else if (view.kind === 'pool' || view.kind === 'pool-empty') {
+    // Signed out: the free credits' balance stands where a signed-in player's name goes, explained on hover.
+    const empty = view.kind === 'pool-empty';
+    const amount = empty ? '$0.00' : (poolAmount(me.pool?.remainingUsd ?? null) ?? 'Free');
+    const credits = el('span', amount, empty ? 'credits empty' : 'credits');
+    credits.tabIndex = 0;
+    credits.dataset.tip = empty ? POOL_EMPTY_NOTICE : 'Free credits: a shared pool for everyone to try';
+    credits.setAttribute('aria-label', `${amount} free credits. ${credits.dataset.tip}`);
     // The amount ticks down while people play; that is not news for a screen reader.
-    p.setAttribute('aria-live', 'off');
-    text.append(p);
-    if (!retry) actions.append(signInButton(me));
-  } else if (view.kind === 'pool-empty') {
-    const p = el('p', undefined, 'status credits empty');
-    p.append(el('span', undefined, 'dot'), el('b', '$0.00'), el('span', ' free credits', 'label'));
-    p.title = POOL_EMPTY_NOTICE;
-    text.append(p);
-    actions.append(signInButton(me));
+    credits.setAttribute('aria-live', 'off');
+    text.append(credits);
+    if (!retry || empty) actions.append(signInButton(me));
   } else if (view.kind === 'dev') {
     const p = el('p', undefined, 'status');
     p.append(el('span', 'Local key', 'badge'));

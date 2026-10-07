@@ -106,12 +106,27 @@ button:hover { border-color: var(--accent); }
 button:disabled, button[aria-disabled] { opacity: 0.45; cursor: not-allowed; }
 button:disabled:hover { border-color: #3a3a5a; }
 .account .hint { color: var(--muted); font-size: 12px; }
-/* The free credits: shown where a signed-in player's name goes. */
-.account .credits { gap: 7px; font-family: ui-monospace, monospace; font-weight: 600; color: #4ade80; }
-.account .credits .label { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; color: var(--muted); }
-.account .credits .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18); }
-.account .credits.empty { color: var(--danger); }
-.account .credits.empty .dot { box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.18); }
+/* The free credits: just the amount where a signed-in player's name goes, explained on hover (as on AI Roundtable). */
+.account .credits { position: relative; font: 600 14px ui-monospace, monospace; color: #4ade80; padding: 4px 6px; border-radius: 6px; cursor: help; outline: none; }
+.account .credits.empty { color: var(--muted); }
+.account .credits:hover, .account .credits:focus-visible { background: #1c1c2b; }
+.account .credits[data-tip]:hover::after, .account .credits[data-tip]:focus-visible::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; z-index: 10; width: max-content; max-width: 340px;
+  background: var(--card); color: var(--text); border: 1px solid #2a2a40; border-radius: 8px; padding: 6px 10px;
+  font: 500 12px/1.4 ui-sans-serif, system-ui, sans-serif; white-space: normal; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+/* A signed-in player: initial, name and a small menu. */
+.user-menu { position: relative; }
+.user-menu summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 4px 6px; border-radius: 8px; font-weight: 500; font-size: 14px; }
+.user-menu summary::-webkit-details-marker { display: none; }
+.user-menu summary:hover, .user-menu[open] summary { background: #1c1c2b; }
+.user-menu .avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #24243a; font-size: 12px; font-weight: 600; }
+.user-menu .name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-menu .chevron { width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: translateY(-2px) rotate(45deg); }
+.user-menu .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; min-width: 160px; display: grid; padding: 6px; background: var(--card); border: 1px solid #2a2a40; border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.user-menu .menu a, .user-menu .menu button { text-align: left; background: none; border: 0; border-radius: 6px; padding: 8px 10px; color: var(--text); text-decoration: none; font-size: 13px; }
+.user-menu .menu a:hover, .user-menu .menu button:hover { background: #24243a; }
+@media (max-width: 640px) { .user-menu .name { display: none; } }
 .account .hint a { color: var(--muted); text-decoration: underline; }
 
 .board { position: relative; width: fit-content; max-width: 100%; }
