@@ -473,7 +473,8 @@ function openPicker(): void {
       const l = { ...lineup };
       const models = ghostModels();
       const id = gameId;
-      void warming.warmAll(() => models, (cold) => p.busy(`Waking up ${cold.map(short).join(' and ')}…`)).then((failed) => {
+      // The button says it short; the line under it names who is waking.
+      void warming.warmAll(() => models, (cold) => { p.busy('Waking up…'); p.note(`Waking up ${cold.map(short).join(' and ')}`); }).then((failed) => {
         if (id !== gameId || picker !== p) return; // closed or replaced meanwhile
         const awake = models.filter((m) => !failed.includes(m));
         if (!awake.length) {
