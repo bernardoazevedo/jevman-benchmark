@@ -20,7 +20,7 @@
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scrollbar-gutter: stable; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--body); -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -98,10 +98,14 @@ main { display: block; }
 .board canvas { display: block; width: 100%; height: auto; }
 .board.dim canvas { filter: brightness(0.35) saturate(0.6); }
 .board.steering canvas { touch-action: none; }
-.play-cta { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); border: 0; border-radius: 999px; background: var(--text); color: #fff; padding: 12px 24px; font: 600 16px/1.2 var(--display); white-space: nowrap; box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.6); }
-.play-cta:hover { background: #253e55; }
+.play-cta {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82); color: var(--text); padding: 12px 24px; font: 700 16px/1.2 var(--display); white-space: nowrap;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.6); transition: background 120ms;
+}
+.play-cta:hover { background: rgba(255, 255, 255, 0.95); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; line-height: 1.45; overflow: auto; }
-.plate { display: flex; align-items: center; gap: 8px; padding: 0 4px 2px; font-size: 14px; min-height: 30px; }
+.plate { display: flex; align-items: center; gap: 8px; padding: 0 4px 2px; font-size: 14px; height: 32px; }
 .plate-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plate-label b { font-weight: 700; }
 .tag { font: 600 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
@@ -111,8 +115,8 @@ main { display: block; }
 .lives .pac { width: 11px; height: 11px; }
 .icon { width: 28px; height: 28px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font-size: 11px; padding: 0; }
 .icon:hover { background: var(--soft); color: var(--text); }
-.notice { margin: 0 4px 2px; font-size: 13px; color: var(--danger); }
-.notice a, .notice button { color: inherit; font-weight: 600; background: none; border: 0; padding: 0; text-decoration: underline; }
+.board-notice { position: absolute; left: 10px; right: 10px; top: 10px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.92); color: var(--danger); font-size: 13px; line-height: 1.4; box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6); }
+.board-notice a, .board-notice button { color: inherit; font-weight: 600; background: none; border: 0; padding: 0; text-decoration: underline; }
 .dpad { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 54px); gap: 6px; justify-content: center; }
 .dpad button { font-size: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .dpad [data-dir='up'] { grid-column: 2; grid-row: 1; }
@@ -179,7 +183,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .totals div + div { border-left: 1px solid var(--line); }
 .totals span { font-size: 11px; color: var(--muted); }
 .totals b { font: 600 13px var(--mono); }
-.log { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow: auto; }
+.log { list-style: none; margin: 0; padding: 6px; height: 320px; overflow: auto; }
 .ev { display: grid; grid-template-columns: 2.9em 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 9px; font-size: 13px; }
 .ev .tm { font: 500 11px var(--mono); color: var(--muted); }
 .ev .ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: var(--soft); font: 600 13px var(--mono); }

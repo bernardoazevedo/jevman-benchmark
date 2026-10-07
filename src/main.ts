@@ -81,9 +81,13 @@ if (me.mode === 'pool') {
   }, 60_000);
 }
 
+let noticeTimer = 0;
+/** A note over the top of the board (so nothing below it moves), gone after a while. */
 const notice = (text: string | null) => {
   noticeEl.textContent = text ?? '';
   noticeEl.hidden = !text;
+  clearTimeout(noticeTimer);
+  if (text) noticeTimer = window.setTimeout(() => (noticeEl.hidden = true), 10_000);
 };
 
 // ---------- sound ----------
@@ -171,8 +175,9 @@ let live = false;
 let paused = false;
 let gameId = 0;
 let gameOverShown = false;
-/** Seconds of play in this game (or loop of the recording), for the log's timestamps. */
+/** Seconds of play in the live game, and in the recording (which keeps its place while something else plays). */
 let playT = 0;
+let recordingT = 0;
 let clockMs = 0;
 let last = performance.now();
 let picker: Picker | null = null;
@@ -205,20 +210,19 @@ const controls: Controls = {
 };
 
 const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
+/** The line under the board. Its tag is always there (only its text changes), so nothing shifts when switching. */
 function setPlate(label: string | null = null): void {
+  plateTag.hidden = false;
+  plateTag.textContent = mode.kind === 'recording' ? 'Benchmark game' : mode.kind === 'watch' ? 'Live' : 'Your game';
   if (label !== null) {
-    plateTag.hidden = true;
     plateLabel.textContent = label;
     return;
   }
   const b = (text: string) => Object.assign(document.createElement('b'), { textContent: text });
   if (mode.kind === 'recording' || mode.kind === 'watch') {
     const model = mode.kind === 'watch' ? mode.model : (rec?.model ?? DEFAULT_MODEL);
-    plateTag.hidden = false;
-    plateTag.textContent = mode.kind === 'recording' ? 'Benchmark game' : 'Live';
     plateLabel.replaceChildren(b(modelName(model)), ' vs the classic ghosts');
   } else {
-    plateTag.hidden = true;
     plateLabel.replaceChildren(b('You'), mode.lineup ? ` vs ${lineupNames(mode.lineup)}` : ' vs the classic ghosts');
   }
 }
@@ -259,6 +263,10 @@ function retire(): void {
   live = false;
 }
 
+/** One player for the recording, so coming back to jev picks up where it was instead of starting over. */
+let recordingPlayer: DemoPlayer | null = null;
+const recordingSubject: Subject = { kind: 'pacman', model: rec?.model ?? DEFAULT_MODEL, recorded: true };
+
 /** The recorded benchmark game: plays when the page opens, costs nothing. */
 function showRecording(): void {
   retire();
@@ -269,18 +277,17 @@ function showRecording(): void {
   mode = { kind: 'recording' };
   playCta.hidden = false;
   setPaused(false);
-  playT = 0;
   if (rec) {
-    const subject: Subject = { kind: 'pacman', model: rec.model, recorded: true };
-    demo = new DemoPlayer(rec, {
+    recordingPlayer ??= new DemoPlayer(rec, {
       onLoop: () => {
-        playT = 0;
+        recordingT = 0;
         thinking.clear();
-        log.begin(subject);
+        log.begin(recordingSubject);
       },
     });
+    demo = recordingPlayer;
     state = demo.state;
-    log.begin(subject);
+    log.begin(recordingSubject);
   } else {
     demo = null;
     state = createGame();
@@ -299,10 +306,10 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   choice = next.kind === 'watch' ? { ...base, pacman: next.model } : next.lineup ? { ...base, ...next.lineup } : { ...base };
   state = createGame({ pacmanControl: next.kind === 'watch' ? 'jev' : 'keyboard', ghostsByAI: next.kind === 'play' && next.lineup !== null });
   log.begin(next.kind === 'watch' ? { kind: 'pacman', model: next.model } : next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
-  log.setOpen(false);
   hideOverlay(overlayEl);
   dim(false);
-  playCta.hidden = true;
+  // Watching anything, the way to play stays on the board; playing, it is out of the way.
+  playCta.hidden = next.kind === 'play';
   gameOverShown = false;
   playT = 0;
   live = true;
@@ -329,7 +336,10 @@ function watch(model: string): void {
   if (!canUseAI) return notice(`${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Log in to watch ${modelName(model)} play live on your own Opper account.`);
   retire();
   hideOverlay(overlayEl);
-  playCta.hidden = true;
+  dim(false);
+  picker = null;
+  overlayAction = null;
+  playCta.hidden = false;
   mode = { kind: 'watch', model };
   renderChips();
   setPlate(`Waking up ${modelName(model)}…`);
@@ -403,7 +413,7 @@ function closePicker(): void {
   overlayAction = null;
   hideOverlay(overlayEl);
   dim(false);
-  if (!live) playCta.hidden = false;
+  playCta.hidden = mode.kind === 'play';
 }
 
 // ---------- game over ----------
@@ -521,7 +531,7 @@ window.addEventListener('keydown', (e) => {
     if (overlayAction) {
       e.preventDefault();
       overlayAction();
-    } else if (!live && overlayEl.hidden) {
+    } else if (mode.kind !== 'play' && overlayEl.hidden) {
       e.preventDefault();
       openPicker();
     }
@@ -564,11 +574,11 @@ void Promise.all([
 function tick(dt: number): void {
   if (demo) {
     for (const e of demo.advance(dt)) {
-      log.handle(e, playT);
+      log.handle(e, recordingT);
       if (e.type === 'decision') thinking.add(e.decision, performance.now());
     }
     state = demo.state;
-    if (state.status === 'playing') playT += dt;
+    if (state.status === 'playing') recordingT += dt;
     return;
   }
   if (!live || gameOverShown) return;
@@ -593,7 +603,7 @@ function frame(now: number): void {
   if (!paused) tick(dt);
   drawGame(ctx, state, now / 1000, paused);
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
-  log.observe(state, playT);
+  log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
   if (state.lives !== shownLives) {
     shownLives = state.lives;
