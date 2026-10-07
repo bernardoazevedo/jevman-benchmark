@@ -111,27 +111,35 @@ main { display: block; padding-bottom: 96px; }
 .oc .hero-sub { font-size: 16px; }
 @media (min-width: 768px) { .oc .hero-sub { font-size: 17px; } }
 
-/* ---------- the stage: board, plate, watch chips, activity ---------- */
+/* ---------- the stage: the game card, its activity drawer, the watch chips ---------- */
 .stage { max-width: 1120px; margin: 0 auto; padding: 0 24px; display: grid; justify-items: center; gap: 14px; }
 /*
  * The game card never moves. The activity log is a drawer: a tab on the card's right edge pulls it out into the
- * empty space beside the card (laptop width and up); narrower, it opens under the board from the plate's button.
+ * empty space beside the card (laptop width and up); narrower, the tab hangs from the card's bottom edge and the
+ * drawer opens below the card.
  */
 .tv {
-  --game: 460px; --log: 340px;
+  --game: 460px; --log: 340px; --drawer-h: 420px;
   position: relative; width: calc(var(--game) + 22px); max-width: 100%;
   border: 1px solid var(--j-line); border-radius: 18px; padding: 10px; background: var(--j-card); box-shadow: 0 22px 46px -30px rgba(27, 46, 64, 0.5);
 }
 /* The game column never grows past the card: a long label or a big score can't widen the board. */
 .tv-game { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
-.plate { display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 2px 0 4px; font-size: 14px; }
-.plate-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plate-label b { font-weight: 700; }
-.log-toggle { flex: none; display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 6px 0 8px; border: 1px solid var(--j-line); border-radius: 8px; background: var(--j-card); color: var(--j-muted); }
-.log-toggle:hover, .log-toggle[aria-expanded='true'] { color: var(--j-text); background: var(--j-soft); }
-.log-toggle svg { display: block; }
-.log-toggle .chev { font: 600 15px/1 var(--j-display); transition: transform 200ms; }
-.log-toggle[aria-expanded='true'] .chev { transform: scaleX(-1); }
+/* The cabinet's top strip: who plays over the score, the high score in the middle, the ghosts where 2UP would be. */
+.arcade-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 12px; padding: 2px 4px 0; }
+.arcade-top .cell { display: grid; gap: 2px; min-width: 0; }
+.arcade-top .mid { justify-items: center; text-align: center; cursor: help; }
+.arcade-top .end { justify-items: end; text-align: right; }
+.arcade-top small { max-width: 100%; font: 600 10px/1.2 var(--j-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--j-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arcade-top b { max-width: 100%; font: 700 18px/1.15 var(--j-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arcade-top .end b { font-size: 14px; line-height: 21px; text-transform: uppercase; }
+/* The bottom strip: the lives on the left, a fruit per level on the right, Play between them. */
+.arcade-bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 44px; padding: 0 4px; }
+.arcade-bottom .lives { display: inline-flex; gap: 5px; }
+.arcade-bottom .lives .pac { width: 16px; height: 16px; }
+.arcade-bottom .fruits { justify-self: end; max-width: 100%; overflow: hidden; white-space: nowrap; font-size: 17px; line-height: 1; letter-spacing: 3px; }
+.play-cta { border: 0; border-radius: 999px; background: var(--j-text); color: var(--j-bg); padding: 11px 24px; font: 600 15px/1.2 var(--j-display); white-space: nowrap; transition: background 120ms; }
+.play-cta:hover { background: var(--j-btn-hover); }
 /* Equal gaps between the four, first flush left and last flush right (equal columns left the gaps uneven). */
 .hud { display: flex; justify-content: space-between; gap: 8px; padding: 0 4px 2px; }
 .hud span { display: grid; gap: 1px; min-width: 0; }
@@ -154,7 +162,6 @@ main { display: block; padding-bottom: 96px; }
 .drawer-tab:hover { background: var(--j-soft); }
 .drawer-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: #2ba36b; box-shadow: 0 0 0 3px rgba(43, 163, 107, 0.16); }
 .tv.log-open .drawer-tab { opacity: 0; pointer-events: none; }
-.plate .log-toggle { display: none; } /* the tab opens it at this width */
 .lg-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 14px; }
 .lg-title { margin: 0; font: 700 15px var(--j-display); white-space: nowrap; }
 .close { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--j-line); border-radius: 8px; background: var(--j-card); color: var(--j-muted); display: grid; place-items: center; font-size: 16px; line-height: 1; }
@@ -166,30 +173,21 @@ main { display: block; padding-bottom: 96px; }
 .lg-list > .in { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
 .lg-list .log { flex: 1 1 auto; min-height: 0; padding: 6px; scrollbar-width: thin; }
 .lg-foot { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--j-hair); font-size: 12px; line-height: 1.4; color: var(--j-muted); }
-/* Too narrow for the drawer beside the card: the plate's button opens the log under the board, inside the card. */
+/* Too narrow for the drawer beside the card: the tab hangs from the card's bottom edge, and the drawer opens below. */
 @media (max-width: 1239px) {
-  .drawer-tab { display: none; }
-  .plate .log-toggle { display: inline-flex; }
-  .side-log, .tv.log-open .side-log { position: static; width: auto; height: 380px; margin-top: 10px; border: 0; border-top: 1px solid var(--j-hair); border-radius: 0; box-shadow: none; background: none; opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: none; }
-  .tv:not(.log-open) .side-log { display: none; }
-  .lg-head { padding-left: 4px; padding-right: 0; }
-  .lg-totals { padding-inline: 4px; }
-  .lg-foot { padding-inline: 4px; }
+  .tv { margin-bottom: 30px; transition: margin-bottom 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .tv.log-open { margin-bottom: calc(var(--drawer-h) + 14px); }
+  .drawer-tab { top: 100%; right: auto; left: 50%; transform: translate(-50%, -1px); writing-mode: horizontal-tb; padding: 7px 16px 8px; border: 1px solid var(--j-line); border-top: 0; border-radius: 0 0 12px 12px; box-shadow: 0 10px 20px -14px rgba(27, 46, 64, 0.4); }
+  .side-log { top: calc(100% + 14px); bottom: auto; left: 0; right: 0; width: auto; height: var(--drawer-h); transform: translateY(-16px); }
+  .tv.log-open .side-log { transform: none; }
 }
 .board { position: relative; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .board canvas { display: block; width: 100%; height: auto; }
 .board.dim canvas { filter: brightness(0.35) saturate(0.6); }
 .board.steering canvas { touch-action: none; }
-.play-cta {
-  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82); color: var(--j-on-board); padding: 12px 24px; font: 700 16px/1.2 var(--j-display); white-space: nowrap;
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.6); transition: background 120ms;
-}
-.play-cta:hover { background: rgba(255, 255, 255, 0.95); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; line-height: 1.45; overflow: auto; }
 .lives { display: inline-flex; gap: 2px; }
 .lives .pac { width: 11px; height: 11px; }
-.hud .lives { min-width: 37px; } /* three lives wide, so losing one doesn't shift the others */
 /* Sound: a quiet button in the board's corner, shown on hover (always on touch screens, and while muted). */
 .sound-btn {
   position: absolute; top: 10px; right: 10px; z-index: 1; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px;

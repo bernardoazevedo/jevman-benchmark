@@ -46,7 +46,7 @@ describe('Replay', () => {
   });
 
   // Watch plays these: each must exist, be the model it is listed under, and replay exactly.
-  for (const [model, path] of Object.entries(RECORDINGS)) {
+  for (const [model, { path, score }] of Object.entries(RECORDINGS)) {
     const file = new URL(`../public${path}`, import.meta.url);
     it(`replays ${path} exactly (re-record if this fails after a sim change)`, () => {
       expect(existsSync(file), `public${path} is missing`).toBe(true);
@@ -55,6 +55,7 @@ describe('Replay', () => {
       const replay = new Replay(rec);
       while (!replay.done) replay.stepFrame();
       expect({ score: replay.state.score, lives: replay.state.lives, level: replay.state.level, frames: replay.frame }).toEqual(rec.final);
+      expect(rec.final.score, 'the score listed in src/recordings.ts').toBe(score);
     });
   }
 });

@@ -75,35 +75,32 @@
       <div class="oc col">
         <section class="flex flex-col items-center justify-center text-center gap-8 pt-24 pb-10 md:pt-32 md:pb-12">
           <h1 class="hero-h1 font-wix font-semibold text-3xl md:text-4xl text-left md:text-center">jevman: a Pac-Man benchmark for decision models</h1>
-          <p class="hero-sub font-wix font-medium text-left md:text-center text-lg md:text-xl">Six AI decision models play Pac-Man in real time. See how they rank, watch their games, or play against them.</p>
+          <p class="hero-sub font-wix font-medium text-left md:text-center text-lg md:text-xl">Six AI decision models played Pac-Man: see how they rank, watch their games or play against them.</p>
         </section>
       </div>
 
       <section class="stage" aria-label="The game">
         <div class="tv" id="tv">
           <div class="tv-game">
-            <div class="plate">
-              <span class="pac" aria-hidden="true"></span>
-              <span id="plate-label" class="plate-label"></span>
-              <button id="log-toggle" class="log-toggle" type="button" aria-controls="activity" aria-expanded="false" aria-label="Show the activity log" title="Activity log">
-                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /></svg>
-                <span class="chev" aria-hidden="true">›</span>
-              </button>
-            </div>
-            <div class="hud" aria-label="Game">
-              <span><small>Score</small><b id="score">0</b></span>
-              <span><small>Level</small><b id="level">1</b></span>
-              <span><small>Lives</small><b id="lives" class="lives"></b></span>
-              <span><small>Fruit</small><b id="fruit"></b></span>
+            <!-- Laid out like the 1980 cabinet: who plays and the score, the high score, and the ghosts (where 2UP would be). -->
+            <div class="arcade-top">
+              <span class="cell"><small id="plate-label">jev 1.13</small><b id="score">0</b></span>
+              <span class="cell mid" title="The best game on this page: the six recorded AI games, and yours"><small>High score</small><b id="hi-score">0</b></span>
+              <span class="cell end"><small>Ghosts</small><b id="ghosts-label">Classic</b></span>
             </div>
             <div class="board">
               <canvas id="game" width="560" height="620" aria-label="Pac-Man game board"></canvas>
               <div id="overlay" class="overlay" hidden></div>
-              <button id="play-cta" class="play-cta" type="button" hidden>▶ Play against the AIs</button>
               <p id="notice" class="board-notice" role="status" hidden></p>
               <button id="sound" class="sound-btn" type="button" aria-pressed="true" aria-label="Sound (M)" title="Mute (M)">
                 <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" fill="currentColor" /><path class="on" d="M13.5 7a4 4 0 0 1 0 6M15.8 4.8a7 7 0 0 1 0 10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /><path class="off" d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" /></svg>
               </button>
+            </div>
+            <!-- The cabinet's bottom strip: lives on the left, the levels' fruit on the right, and Play between them. -->
+            <div class="arcade-bottom">
+              <span id="lives" class="lives" aria-label="Lives"></span>
+              <button id="play-cta" class="play-cta" type="button" hidden><span aria-hidden="true">▶</span> Play vs AI</button>
+              <span id="fruit" class="fruits" title="Bonus fruit, one per level reached"></span>
             </div>
             <div class="dpad" id="dpad" hidden aria-label="Steer Pac-Man">
               <button type="button" data-dir="up" aria-label="Up">▲</button>

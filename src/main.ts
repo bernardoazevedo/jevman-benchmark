@@ -11,7 +11,7 @@ import { renderLeaderboard } from './results';
 import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { cuesBetween, snapshot, Sound } from './sound';
-import { RECORDINGS } from './recordings';
+import { RECORDINGS, TOP_RECORDED_SCORE } from './recordings';
 import type { Recording } from './replay';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
@@ -39,7 +39,7 @@ const recordingLoads = new Map<string, Promise<Recording | null>>();
 const loadFor = (model: string): Promise<Recording | null> => {
   let p = recordingLoads.get(model);
   if (!p) {
-    p = loadRecording(appPath(RECORDINGS[model] ?? ''), 8000);
+    p = loadRecording(appPath(RECORDINGS[model]?.path ?? ''), 8000);
     recordingLoads.set(model, p);
     // A failed download can be tried again on the next click.
     void p.then((r) => r ?? recordingLoads.delete(model));
@@ -62,7 +62,8 @@ const overlayEl = $('#overlay');
 const playCta = $<HTMLButtonElement>('#play-cta');
 const plateLabel = $('#plate-label');
 const scoreEl = $('#score');
-const levelEl = $('#level');
+const hiEl = $('#hi-score');
+const ghostsEl = $('#ghosts-label');
 const livesEl = $('#lives');
 const fruitEl = $('#fruit');
 const noticeEl = $('#notice');
@@ -87,14 +88,11 @@ const chipsEl = $('#watch-chips');
 const thinking = new Thinking();
 const LOG_KEY = 'jevman.log';
 const tvEl = $('#tv');
-const logToggle = $<HTMLButtonElement>('#log-toggle');
 const logTab = $<HTMLButtonElement>('#log-tab');
-/** The activity log opens beside the board (below it on a phone); the choice is remembered. */
+/** The activity log is a drawer: its tab pulls it out beside the card (below it on narrower screens); remembered. */
 const log = new ActivityLog($('#activity'), {
   onOpenChange: (open) => {
     tvEl.classList.toggle('log-open', open);
-    logToggle.setAttribute('aria-expanded', String(open));
-    logToggle.setAttribute('aria-label', open ? 'Hide the activity log' : 'Show the activity log');
     logTab.setAttribute('aria-expanded', String(open));
     try {
       localStorage.setItem(LOG_KEY, open ? '1' : '0');
@@ -103,7 +101,6 @@ const log = new ActivityLog($('#activity'), {
     }
   },
 });
-logToggle.addEventListener('click', () => log.setOpen(!log.isOpen));
 logTab.addEventListener('click', () => log.setOpen(true));
 try {
   if (localStorage.getItem(LOG_KEY) === '1') log.setOpen(true);
@@ -272,18 +269,17 @@ const controls: Controls = {
 };
 
 const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
-/** The line above the board: who is playing whom. */
+/** The top strip, as on the cabinet: who plays Pac-Man over the score (or a status line), and the ghosts where 2UP is. */
 function setPlate(label: string | null = null): void {
   if (label !== null) {
     plateLabel.textContent = label;
     return;
   }
-  const b = (text: string) => Object.assign(document.createElement('b'), { textContent: text });
-  if (mode.kind === 'recording') {
-    plateLabel.replaceChildren(b(modelName(mode.model)), ' vs the classic ghosts');
-  } else {
-    plateLabel.replaceChildren(b('You'), mode.lineup ? ` vs ${lineupNames(mode.lineup)}` : ' vs the classic ghosts');
-  }
+  plateLabel.textContent = mode.kind === 'recording' ? modelName(mode.model) : 'You';
+  const lineup = mode.kind === 'play' ? mode.lineup : null;
+  const models = lineup ? [...new Set(GHOST_IDS.map((g) => lineup[g]))] : [];
+  ghostsEl.textContent = !lineup ? 'Classic' : models.length === 1 ? short(models[0]!) : 'Mixed AIs';
+  ghostsEl.title = lineup ? lineupNames(lineup) : 'The arcade\'s own scripted ghosts';
 }
 
 function renderChips(): void {
@@ -509,12 +505,15 @@ const readBest = (): number => {
   }
 };
 const writeBest = (score: number) => {
+  knownBest = score;
   try {
     localStorage.setItem(BEST_KEY, String(score));
   } catch {
     // not remembered
   }
 };
+/** Read once, then kept up to date: the high score shows it every frame. */
+let knownBest = readBest();
 const touchScreen = matchMedia('(pointer: coarse)').matches;
 // The theme follows the system while the visitor hasn't picked one on opper.ai (index.html sets it before the first paint).
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
@@ -703,9 +702,11 @@ function frame(now: number): void {
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
-  setText(levelEl, String(state.level));
-  const fruit = fruitForLevel(state.level);
-  setText(fruitEl, `${FRUIT_EMOJI[fruit.kind] ?? ''} ${fruit.points}`);
+  // The best game on this page: the recorded AI games, your best, and this game once it passes them.
+  setText(hiEl, Math.max(TOP_RECORDED_SCORE, knownBest, mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
+  // One fruit per level reached, the latest last, as along the cabinet's bottom edge (at most seven).
+  const fruits = Array.from({ length: Math.min(state.level, 7) }, (_, i) => FRUIT_EMOJI[fruitForLevel(state.level - Math.min(state.level, 7) + 1 + i).kind] ?? '').join('');
+  setText(fruitEl, fruits);
   if (state.lives !== shownLives) {
     shownLives = state.lives;
     livesEl.replaceChildren(...Array.from({ length: Math.max(0, state.lives) }, () => Object.assign(document.createElement('span'), { className: 'pac' })));
