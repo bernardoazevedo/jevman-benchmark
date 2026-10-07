@@ -73,12 +73,14 @@ const thinking = new Thinking();
 const LOG_KEY = 'jevman.log';
 const tvEl = $('#tv');
 const logToggle = $<HTMLButtonElement>('#log-toggle');
+const logTab = $<HTMLButtonElement>('#log-tab');
 /** The activity log opens beside the board (below it on a phone); the choice is remembered. */
 const log = new ActivityLog($('#activity'), {
   onOpenChange: (open) => {
     tvEl.classList.toggle('log-open', open);
     logToggle.setAttribute('aria-expanded', String(open));
     logToggle.setAttribute('aria-label', open ? 'Hide the activity log' : 'Show the activity log');
+    logTab.setAttribute('aria-expanded', String(open));
     try {
       localStorage.setItem(LOG_KEY, open ? '1' : '0');
     } catch {
@@ -87,6 +89,7 @@ const log = new ActivityLog($('#activity'), {
   },
 });
 logToggle.addEventListener('click', () => log.setOpen(!log.isOpen));
+logTab.addEventListener('click', () => log.setOpen(true));
 try {
   if (localStorage.getItem(LOG_KEY) === '1') log.setOpen(true);
 } catch {

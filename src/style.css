@@ -124,19 +124,16 @@ main { display: block; padding-bottom: 96px; }
 /* ---------- the stage: board, plate, watch chips, activity ---------- */
 .stage { max-width: 1120px; margin: 0 auto; padding: 0 24px; display: grid; justify-items: center; gap: 14px; }
 /*
- * One card: the game, and the activity log that opens beside it (the card widens and re-centres). Both columns share
- * the card's rows, so the log's title, totals and moves sit level with the plate, the score line and the board.
+ * The game card never moves. The activity log is a drawer: a tab on the card's right edge pulls it out into the
+ * empty space beside the card (laptop width and up); narrower, it opens under the board from the plate's button.
  */
 .tv {
-  --game: 460px; --log: 356px; --gap: 16px;
-  display: grid; grid-template-columns: var(--game) 0px; grid-template-rows: 32px auto auto auto; column-gap: 0; row-gap: 8px; max-width: 100%;
+  --game: 460px; --log: 340px;
+  position: relative; width: calc(var(--game) + 22px); max-width: 100%;
   border: 1px solid var(--j-line); border-radius: 18px; padding: 10px; background: var(--j-card); box-shadow: 0 22px 46px -30px rgba(27, 46, 64, 0.5);
-  transition: grid-template-columns 320ms cubic-bezier(0.2, 0.8, 0.2, 1), column-gap 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.tv:has(> .tv-game > .dpad[hidden]) { grid-template-rows: 32px auto auto; } /* the touch pad's row only when it shows */
-.tv.log-open { grid-template-columns: var(--game) var(--log); column-gap: var(--gap); }
-/* The game column never grows past its track: a long label or a big score can't widen the board. */
-.tv-game { grid-column: 1; grid-row: 1 / -1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: subgrid; }
+/* The game column never grows past the card: a long label or a big score can't widen the board. */
+.tv-game { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
 .plate { display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 2px 0 4px; font-size: 14px; }
 .plate-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plate-label b { font-weight: 700; }
@@ -150,20 +147,44 @@ main { display: block; padding-bottom: 96px; }
 .hud small { font: 600 10px var(--j-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--j-muted); }
 .hud b { font: 600 15px var(--j-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 2px; min-height: 20px; }
 .board { cursor: pointer; }
-/* The log: no box of its own, just a hairline from the game; each row is clipped to the column so it slides open with the card. */
-.side-log { grid-column: 2; grid-row: 1 / 4; display: grid; grid-template-rows: subgrid; min-width: 0; overflow: hidden; position: relative; }
-.side-log::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 0; width: 1px; background: var(--j-hair); }
-.side-log > .lg { width: var(--log); min-width: 0; padding-left: var(--gap); }
-.lg-head { display: flex; align-items: center; gap: 10px; height: 32px; }
-.lg-title { margin: 0; font: 700 14px var(--j-display); white-space: nowrap; }
+/* The drawer: its own card, as tall as the game card, beside it. */
+.side-log {
+  position: absolute; top: 0; bottom: 0; left: calc(100% + 14px); width: var(--log); display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-card); box-shadow: 0 22px 46px -30px rgba(27, 46, 64, 0.5);
+  opacity: 0; transform: translateX(-24px); visibility: hidden; pointer-events: none;
+  transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 260ms;
+}
+.tv.log-open .side-log { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.drawer-tab {
+  position: absolute; top: 50%; right: -1px; transform: translate(100%, -50%); z-index: 2; display: flex; align-items: center; gap: 8px;
+  writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--j-line); border-left: 0; border-radius: 0 12px 12px 0;
+  background: var(--j-card); color: var(--j-text); font: 600 12px var(--j-display); box-shadow: 8px 0 20px -14px rgba(27, 46, 64, 0.4); transition: opacity 160ms, background 120ms;
+}
+.drawer-tab:hover { background: var(--j-soft); }
+.drawer-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: #2ba36b; box-shadow: 0 0 0 3px rgba(43, 163, 107, 0.16); }
+.tv.log-open .drawer-tab { opacity: 0; pointer-events: none; }
+.plate .log-toggle { display: none; } /* the tab opens it at this width */
+.lg-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 14px; }
+.lg-title { margin: 0; font: 700 15px var(--j-display); white-space: nowrap; }
 .close { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--j-line); border-radius: 8px; background: var(--j-card); color: var(--j-muted); display: grid; place-items: center; font-size: 16px; line-height: 1; }
 .close:hover { color: var(--j-text); background: var(--j-soft); }
 .lg-head .close { margin-left: auto; }
-/* The moves end where the board ends: placed absolutely, so the board alone sets the row's height. */
-.lg-list { position: relative; min-height: 0; }
-.lg-list > .in { position: absolute; top: 0; bottom: 0; left: var(--gap); right: 0; display: flex; flex-direction: column; overflow: hidden; }
-.lg-list .log { flex: 1 1 auto; min-height: 0; padding: 0 0 6px; scrollbar-width: thin; }
-.lg-foot { margin: 0; padding: 8px 8px 0; border-top: 1px solid var(--j-hair); font-size: 12px; line-height: 1.4; color: var(--j-muted); }
+.lg-totals { padding: 0 14px 10px; border-bottom: 1px solid var(--j-hair); }
+.lg-totals .hud { padding: 0; }
+.lg-list { position: relative; flex: 1 1 auto; min-height: 0; }
+.lg-list > .in { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lg-list .log { flex: 1 1 auto; min-height: 0; padding: 6px; scrollbar-width: thin; }
+.lg-foot { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--j-hair); font-size: 12px; line-height: 1.4; color: var(--j-muted); }
+/* Too narrow for the drawer beside the card: the plate's button opens the log under the board, inside the card. */
+@media (max-width: 1239px) {
+  .drawer-tab { display: none; }
+  .plate .log-toggle { display: inline-flex; }
+  .side-log, .tv.log-open .side-log { position: static; width: auto; height: 380px; margin-top: 10px; border: 0; border-top: 1px solid var(--j-hair); border-radius: 0; box-shadow: none; background: none; opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: none; }
+  .tv:not(.log-open) .side-log { display: none; }
+  .lg-head { padding-left: 4px; padding-right: 0; }
+  .lg-totals { padding-inline: 4px; }
+  .lg-foot { padding-inline: 4px; }
+}
 .board { position: relative; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .board canvas { display: block; width: 100%; height: auto; }
 .board.dim canvas { filter: brightness(0.35) saturate(0.6); }
@@ -303,15 +324,8 @@ kbd { font: 500 11px var(--j-mono); border: 1px solid var(--j-line); border-bott
 /* ---------- small screens ---------- */
 @media (max-width: 900px) {
   .stage { padding: 0 16px; }
-  .tv, .tv.log-open, .tv:has(> .tv-game > .dpad[hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; column-gap: 0; width: min(480px, 100%); }
-  .tv-game { grid-row: auto; grid-template-rows: none; row-gap: 8px; }
-  .side-log { display: none; grid-column: 1; grid-row: auto; grid-template-rows: none; row-gap: 8px; }
-  .tv.log-open .side-log { display: grid; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--j-hair); }
-  .side-log::before { display: none; }
-  .side-log > .lg { width: auto; padding-left: 0; }
-  .lg-head { height: auto; min-height: 32px; flex-wrap: wrap; }
-  .lg-list { height: 340px; }
-  .lg-list > .in { left: 0; }
+  .tv { width: min(480px, 100%); }
+  .lg-head { flex-wrap: wrap; }
   .section { margin-top: 64px; }
   .lbt .hide-n { display: none; }
   .lbt .mdl .score-m { display: block; }
