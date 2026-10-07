@@ -132,7 +132,8 @@ main { display: block; padding-bottom: 96px; }
 .log-toggle svg { display: block; }
 .log-toggle .chev { font: 600 15px/1 var(--j-display); transition: transform 200ms; }
 .log-toggle[aria-expanded='true'] .chev { transform: scaleX(-1); }
-.hud { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0 4px 2px; }
+/* Equal gaps between the four, first flush left and last flush right (equal columns left the gaps uneven). */
+.hud { display: flex; justify-content: space-between; gap: 8px; padding: 0 4px 2px; }
 .hud span { display: grid; gap: 1px; min-width: 0; }
 .hud small { font: 600 10px var(--j-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--j-muted); }
 .hud b { font: 600 15px var(--j-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 2px; min-height: 20px; }
@@ -188,6 +189,7 @@ main { display: block; padding-bottom: 96px; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; line-height: 1.45; overflow: auto; }
 .lives { display: inline-flex; gap: 2px; }
 .lives .pac { width: 11px; height: 11px; }
+.hud .lives { min-width: 37px; } /* three lives wide, so losing one doesn't shift the others */
 /* Sound: a quiet button in the board's corner, shown on hover (always on touch screens, and while muted). */
 .sound-btn {
   position: absolute; top: 10px; right: 10px; z-index: 1; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px;
