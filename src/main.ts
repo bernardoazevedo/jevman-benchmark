@@ -4,7 +4,8 @@ import { initialChoice, modelOptions, requestModel, type ModelChoice } from './c
 import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
-import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showPicker, type Lineup, type Picker } from './overlay';
+import { enterScore, fetchBoards, placeFor, stashPending, takePending, topPlayerScore, type Boards } from './highscores';
+import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showInitialsEntry, showPicker, type BoardEntryOption, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { renderLeaderboard } from './results';
@@ -12,7 +13,7 @@ import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { cuesBetween, snapshot, Sound } from './sound';
 import { RECORDINGS, TOP_RECORDED_SCORE } from './recordings';
-import type { Recording } from './replay';
+import { Recorder, roundDt, type Recording } from './replay';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
 import { attachTouch } from './touch';
@@ -21,6 +22,7 @@ import { GHOST_IDS, type Dir } from './types';
 import { shareText, versus } from './versus';
 import { ModelWarming } from './warming';
 import type { Community, Leaderboard } from '../shared/leaderboard';
+import { boardOf } from '../shared/lineups';
 import { DEFAULT_MODEL, modelName } from '../shared/models';
 
 const KEYS: Record<string, Dir> = {
@@ -267,9 +269,19 @@ const newScheduler = (gameStats: GameStats) =>
   });
 let scheduler = newScheduler(stats);
 // The characters no AI plays follow the classic rules.
+/** Your game against AI ghosts, recorded as it is played (steering, steps, the ghosts' answers) for the high-score check. */
+let recorder: Recorder | null = null;
+let recFrame = 0;
 const controls: Controls = {
   decide: (point, s) => (jevActors(s).includes(point.actor) ? scheduler.decide(point, s) : greedyChoice(s, point, optionFeatures(s, point))),
 };
+/** The controls a step uses: through the recorder in your own game against AI ghosts, so their answers are kept. */
+const recorded: Controls = { decide: (point, st) => (recorder ? recorderControls.decide(point, st) : controls.decide(point, st)) };
+const recorderControls: Controls = { decide: (point, st) => {
+  const choice = controls.decide(point, st);
+  if (choice !== null && recorder) recorder.decisions.push([recFrame, point.key, choice]);
+  return choice;
+} };
 
 const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
 /** The top strip, as on the cabinet: who plays Pac-Man over the score (or a status line), and the ghosts where 2UP is. */
@@ -392,6 +404,8 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   mode = next;
   choice = next.lineup ? { ...base, ...next.lineup } : { ...base };
   state = createGame({ pacmanControl: 'keyboard', ghostsByAI: next.lineup !== null });
+  recorder = next.lineup ? new Recorder() : null;
+  recFrame = 0;
   log.begin(next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
   hideOverlay(overlayEl);
   dim(false);
@@ -492,6 +506,7 @@ function openPicker(): void {
     onClassic: () => startGame({ kind: 'play', lineup: null }),
     onLogin: signIn,
     onBack: closePicker,
+    boards: () => boards,
   });
   picker = p;
   overlayAction = p.action;
@@ -509,6 +524,11 @@ function closePicker(): void {
 
 // ---------- game over ----------
 let board: Leaderboard | null = null;
+/** The players' high-score boards, once loaded (and after each entry). */
+let boards: Boards | null = null;
+void fetchBoards().then((b) => {
+  if (b) boards = b;
+});
 /** The best game any model played (the leaderboard's high score), until the leaderboard loads the best recorded one. */
 let topAiScore = TOP_RECORDED_SCORE;
 const readBest = (): number => {
@@ -576,6 +596,7 @@ function gameOver(): void {
     lineup: l,
     board,
     newBest,
+    entry: l ? boardEntry(l, summary.score) : null,
     onPlayAgain: again,
     onShare: () => shareScore(l ? aiShareText(summary, l, SHARE_URL) : board ? shareText(versus(board, summary.score), SHARE_URL) : `I scored ${summary.score} at jevman 🟡 ${SHARE_URL}`),
     onReview: l
@@ -585,6 +606,34 @@ function gameOver(): void {
       : null,
     onBack: showRecording,
   });
+}
+
+/** Game over against a lineup: on its board's top ten, enter initials (signed in) or sign in for it; or a custom mix's note. */
+function boardEntry(l: Lineup, score: number): BoardEntryOption | null {
+  const key = boardOf(l);
+  if (!key) return { kind: 'custom' };
+  const place = placeFor(boards, key, score);
+  const rec = recorder?.finish(state, 'player', { pacmanControl: 'keyboard', ghostsByAI: true });
+  if (place === null || !rec) return null;
+  if (account.kind !== 'player') {
+    return {
+      kind: 'signin',
+      board: key,
+      place,
+      onSignIn: () => {
+        stashPending({ board: key, score, recording: rec });
+        signIn();
+      },
+    };
+  }
+  return { kind: 'enter', board: key, place, submit: (initials) => submitScore(key, initials, rec) };
+}
+
+async function submitScore(key: string, initials: string, rec: Recording): Promise<{ error: string } | { place: number | null; entries: Boards[string] }> {
+  const r = await enterScore(key, initials, rec);
+  if (!r.ok) return { error: r.signedOut ? 'Sign in again to enter your initials' : r.error };
+  boards = r.boards;
+  return { place: r.place, entries: r.boards[key] ?? [] };
 }
 
 // ---------- controls ----------
@@ -700,8 +749,16 @@ function tick(dt: number): void {
   clockMs += dt * 1000;
   scheduler.update(state);
   stats.beforeStep(state);
-  step(state, dt, controls);
-  stats.afterStep(state, dt);
+  // Stepped with the recorded (rounded) step, so the server's replay of this game lands on the same score.
+  const stepDt = roundDt(dt);
+  if (recorder) {
+    recFrame = recorder.frames.length;
+    recorder.key(recFrame, state.keyDir);
+    recorder.frames.push(stepDt);
+  }
+  step(state, stepDt, recorded);
+  recorder?.settle(state.keyDir);
+  stats.afterStep(state, stepDt);
   for (const cue of cuesBetween(heard, state)) sound.play(cue);
   if (state.status === 'playing') playT += dt;
   if (state.status === 'gameover') gameOver();
@@ -720,7 +777,7 @@ function frame(now: number): void {
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
   // The best game on this page: the recorded AI games, your best, and this game once it passes them.
-  setText(hiEl, Math.max(topAiScore, knownBest, mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
+  setText(hiEl, Math.max(topAiScore, knownBest, topPlayerScore(boards), mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
   // One fruit per level reached, the latest last, as along the cabinet's bottom edge (at most seven).
   const fruits = Array.from({ length: Math.min(state.level, 7) }, (_, i) => FRUIT_EMOJI[fruitForLevel(state.level - Math.min(state.level, 7) + 1 + i).kind] ?? '').join('');
   setText(fruitEl, fruits);
@@ -738,4 +795,19 @@ function frame(now: number): void {
 const linked = new URLSearchParams(location.search).get('pacman');
 showRecording();
 if (linked && RECORDINGS[linked] !== undefined) watch(linked);
+// Back from signing in with a game that made a board: its initials now.
+const waiting = takePending();
+if (waiting && account.kind === 'player') {
+  held = true;
+  dim(true);
+  showInitialsEntry(overlayEl, {
+    score: waiting.score,
+    entry: { kind: 'enter', board: waiting.board, place: placeFor(boards, waiting.board, waiting.score) ?? 1, submit: (initials) => submitScore(waiting.board, initials, waiting.recording) },
+    onDone: () => {
+      held = false;
+      hideOverlay(overlayEl);
+      dim(false);
+    },
+  });
+}
 requestAnimationFrame(frame);

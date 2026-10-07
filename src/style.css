@@ -321,6 +321,19 @@ main { display: block; padding-bottom: 96px; }
 .dots .lead { height: 2px; background: radial-gradient(circle, #f4b6a6 1px, transparent 1.5px) 0 50% / 8px 2px repeat-x; }
 .dots .num { color: #fff; }
 .over-btns { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+/* The players' boards: "you made the board", three initials, and the board itself (in the picker too). */
+.made { display: grid; gap: 8px; justify-items: center; padding: 10px 0 4px; border-block: 2px solid var(--j-maze); }
+.arc .made-title { margin: 0; font: 11px/1.5 var(--j-pixel); color: #00ffff; }
+.arc .made-title.top { color: var(--j-arc-yellow); animation: blink 0.9s steps(1) infinite; }
+.arc .made-board { margin: 0; font: 8px/1.5 var(--j-pixel); color: #8f97ff; }
+.initials { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; gap: 10px; }
+.initials .tap { grid-column: 1 / -1; min-height: 1.6em; }
+.initials input { width: 5.6em; padding: 8px 6px 6px; border: 0; border-bottom: 2px solid var(--j-arc-yellow); background: none; color: #fff; font: 16px/1 var(--j-pixel); letter-spacing: 0.5em; text-align: center; text-transform: uppercase; caret-color: var(--j-arc-yellow); }
+.initials input::placeholder { color: #3a3f55; }
+.initials input:focus { outline: none; border-bottom-color: #fff; }
+.arc .hs { display: grid; gap: 4px; padding-top: 10px; border-top: 2px solid var(--j-maze); }
+.dots.board li { font-size: 9px; }
+@media (prefers-reduced-motion: reduce) { .arc .made-title.top { animation: none; } }
 .arc .press.alt { border-color: var(--j-maze); color: #fff; }
 .arc .press.alt:hover { background: var(--j-maze); color: #fff; }
 @media (max-width: 520px) { .card.arc { padding: 16px 12px 14px; } .roster button { font-size: 8.5px; gap: 6px; padding: 5px 4px; } .arc .ttl { font-size: 10px; } }

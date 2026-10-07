@@ -1,4 +1,6 @@
 import type { Leaderboard } from '../shared/leaderboard';
+import { boardOf } from '../shared/lineups';
+import { boardLabel, type BoardEntry, type Boards } from './highscores';
 import { modelName } from '../shared/models';
 import { logoFor } from './logos';
 import type { GameSummary } from './stats';
@@ -94,6 +96,8 @@ export interface PickerOptions {
   onClassic: () => void;
   onLogin: () => void;
   onBack: () => void;
+  /** The players' high-score boards, if they loaded: the picker shows the chosen lineup's. */
+  boards: () => Boards | null;
 }
 
 export interface Picker {
@@ -103,6 +107,112 @@ export interface Picker {
   note: (text: string | null) => void;
   /** What Space/Enter does. */
   action: () => void;
+}
+
+/** A board as dotted lines, as the roster draws them: place, initials, score; the player's own line in yellow. */
+function boardLines(entries: BoardEntry[], limit: number, mine: number | null = null): HTMLOListElement {
+  const list = el('ol', undefined, 'dots board');
+  entries.slice(0, limit).forEach((e, i) => {
+    const li = el('li', undefined, i + 1 === mine ? 'you' : undefined);
+    li.style.setProperty('--gc', i + 1 === mine ? '#ffd800' : '#ffffff');
+    const name = el('span', undefined, 'nm');
+    name.append(el('span', `${i + 1}`, 'rk'), e.initials);
+    const lead = el('span', undefined, 'lead');
+    lead.setAttribute('aria-hidden', 'true');
+    li.append(name, lead, el('span', e.score.toLocaleString('en-US'), 'num'));
+    list.append(li);
+  });
+  return list;
+}
+
+/** Three letters, as on the cabinet: typed (A to Z), then ENTER. `submit` answers with an error, or null once it is in. */
+function initialsForm(submit: (initials: string) => Promise<string | null>): HTMLFormElement {
+  const form = el('form', undefined, 'initials');
+  const input = el('input');
+  input.type = 'text';
+  input.maxLength = 3;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.setAttribute('autocapitalize', 'characters');
+  input.setAttribute('aria-label', 'Your initials, three letters');
+  input.placeholder = '___';
+  input.addEventListener('input', () => (input.value = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)));
+  const go = el('button', undefined, 'press');
+  go.type = 'submit';
+  const tri = el('span', undefined, 'tri');
+  tri.setAttribute('aria-hidden', 'true');
+  go.append(tri, el('span', 'Enter'));
+  const status = el('p', undefined, 'tap');
+  status.setAttribute('aria-live', 'polite');
+  form.append(input, go, status);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!/^[A-Z]{3}$/.test(input.value)) {
+      status.textContent = 'Three letters, A to Z';
+      return input.focus();
+    }
+    go.disabled = true;
+    status.textContent = 'Checking your game…';
+    void submit(input.value).then((err) => {
+      go.disabled = false;
+      status.textContent = err ?? '';
+    });
+  });
+  queueMicrotask(() => input.focus({ preventScroll: true }));
+  return form;
+}
+
+/** What game over says about the boards, if the game was against a lineup's AIs. */
+export type BoardEntryOption =
+  | { kind: 'enter'; board: string; place: number; submit: (initials: string) => Promise<{ error: string } | { place: number | null; entries: BoardEntry[] }> }
+  | { kind: 'signin'; board: string; place: number; onSignIn: () => void }
+  | { kind: 'custom' };
+
+/** The "you made the board" block: the place, then the initials form (or the way to sign in for it). */
+function boardBlock(o: BoardEntryOption): HTMLElement {
+  const box = el('div', undefined, 'made');
+  if (o.kind === 'custom') {
+    box.append(el('p', 'Custom lineups go on no board. Pick a lineup to compete.', 'tap'));
+    return box;
+  }
+  const label = boardLabel(o.board);
+  box.append(el('p', o.place === 1 ? 'New high score!' : `You made the board · #${o.place}`, o.place === 1 ? 'made-title top' : 'made-title'), el('p', `vs ${label}`, 'made-board'));
+  if (o.kind === 'signin') {
+    const b = el('button', undefined, 'press');
+    b.type = 'button';
+    const tri = el('span', undefined, 'tri');
+    tri.setAttribute('aria-hidden', 'true');
+    b.append(tri, el('span', 'Sign in to enter your initials'));
+    b.addEventListener('click', o.onSignIn);
+    box.append(b, el('p', 'Free Opper account. Your game waits here.', 'tap'));
+    return box;
+  }
+  box.append(
+    initialsForm(async (initials) => {
+      const r = await o.submit(initials);
+      if ('error' in r) return r.error;
+      box.replaceChildren(el('p', r.place === null ? 'Just missed the board' : `#${r.place} on the ${label} board`, 'made-title'), boardLines(r.entries, 5, r.place));
+      return null;
+    }),
+  );
+  return box;
+}
+
+/** After signing in to put a game on a board: the score, the place and the initials form, over the board. */
+export function showInitialsEntry(root: HTMLElement, o: { score: number; entry: BoardEntryOption & { kind: 'enter' }; onDone: () => void }): void {
+  const card = el('div', undefined, 'card arc over');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', 'Enter your initials');
+  const close = el('button', '✕', 'x');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', o.onDone);
+  card.append(close, el('p', 'Your game', 'over-best'), el('p', o.score.toLocaleString('en-US'), 'over-score'), boardBlock(o.entry));
+  const back = el('button', 'Back to watching', 'back');
+  back.type = 'button';
+  back.addEventListener('click', o.onDone);
+  card.append(back);
+  show(root, card);
 }
 
 /** A model's name on the arcade roster: short, and GPT-6 Luna as just Luna (its logo says OpenAI). */
@@ -147,7 +257,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
         b.append(ghostIcon(g, ARCADE_FILL[g]), el('span', GHOST_NAMES[g], 'gn'), lead, md);
         b.addEventListener('click', () => {
           o.onChange({ ...lineup, [g]: nextModel(lineup[g], o.offered) });
-          render();
+          renderAll();
         });
         li.append(b);
         return li;
@@ -160,14 +270,26 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
         b.setAttribute('aria-pressed', String(sameLineup(p.lineup, lineup)));
         b.addEventListener('click', () => {
           o.onChange({ ...p.lineup });
-          render();
+          renderAll();
         });
         return b;
       }),
     );
   };
-  render();
-  card.append(roster, el('p', 'Tap a ghost to switch its AI', 'tap'), opts);
+  const hs = el('div', undefined, 'hs');
+  const renderBoard = () => {
+    const key = boardOf(o.lineup());
+    const boards = o.boards();
+    if (!key) return hs.replaceChildren(el('p', 'High scores', 'colh'), el('p', 'Custom lineups go on no board', 'tap'));
+    const entries = boards?.[key] ?? [];
+    hs.replaceChildren(el('p', `High scores · ${boardLabel(key)}`, 'colh'), entries.length ? boardLines(entries, 5) : el('p', boards ? 'No scores yet. Be the first!' : 'High scores are loading…', 'tap'));
+  };
+  const renderAll = () => {
+    render();
+    renderBoard();
+  };
+  renderAll();
+  card.append(roster, el('p', 'Tap a ghost to switch its AI', 'tap'), opts, hs);
   const status = el('p', undefined, 'tap');
   status.setAttribute('aria-live', 'polite');
   // The marker blinks, the words stay: a button that blinks out entirely reads as broken.
@@ -222,6 +344,8 @@ export interface GameOverOptions {
   onShare: () => Promise<'shared' | 'copied' | 'failed' | 'cancelled'>;
   onReview: (() => void) | null;
   onBack: () => void;
+  /** The players' boards: made one (enter initials, or sign in first), or a custom lineup's note. */
+  entry?: BoardEntryOption | null;
 }
 
 /**
@@ -236,6 +360,7 @@ export function showGameOver(root: HTMLElement, o: GameOverOptions): void {
   card.append(el('p', 'Game over', 'over-title'));
   if (o.newBest) card.append(el('p', 'New personal best', 'over-best'));
   card.append(el('p', s.score.toLocaleString('en-US'), 'over-score'));
+  if (o.entry) card.append(boardBlock(o.entry));
   // A dotted line, as on the roster: name on the left, number on the right.
   const line = (left: (Node | string)[], right: string, color: string, cls = '') => {
     const li = el('li', undefined, cls || undefined);
