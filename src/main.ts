@@ -4,7 +4,7 @@ import { initialChoice, modelOptions, requestModel, type ModelChoice } from './c
 import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
-import { enterScore, fetchBoards, placeFor, stashPending, takePending, topPlayerScore, type Boards } from './highscores';
+import { boardLabel, enterScore, fetchBoards, placeFor, stashPending, takePending, type Boards } from './highscores';
 import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showInitialsEntry, showPicker, type BoardEntryOption, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
@@ -66,6 +66,7 @@ const playLabel = $('#play-label');
 const plateLabel = $('#plate-label');
 const scoreEl = $('#score');
 const hiEl = $('#hi-score');
+const hiTip = $('#hi-tip');
 const ghostsEl = $('#ghosts-label');
 const livesEl = $('#lives');
 const fruitEl = $('#fruit');
@@ -608,6 +609,22 @@ function gameOver(): void {
   });
 }
 
+/**
+ * The cabinet's HIGH SCORE and who holds it: the best single game a model played in the benchmark, a player's best
+ * on a board, your own best against the classic ghosts, or the game you are playing once it passes them all.
+ */
+function highScore(): { score: number; who: string } {
+  const best = board?.entries.reduce<{ score: number; name: string } | null>((b, e) => ((e.bestScore ?? 0) > (b?.score ?? 0) ? { score: e.bestScore!, name: e.name } : b), null);
+  let hi = best && best.score >= TOP_RECORDED_SCORE ? { score: best.score, who: `Held by ${best.name}, its best benchmark game` } : { score: TOP_RECORDED_SCORE, who: 'Held by jev 1.13, a recorded benchmark game' };
+  for (const [key, list] of Object.entries(boards ?? {})) {
+    const top = list[0];
+    if (top && top.score > hi.score) hi = { score: top.score, who: `Held by ${top.initials}, vs ${boardLabel(key)}` };
+  }
+  if (knownBest > hi.score) hi = { score: knownBest, who: 'Held by you, against the classic ghosts' };
+  if (mode.kind === 'play' && live && state.score > hi.score) hi = { score: state.score, who: "That's you, this game!" };
+  return hi;
+}
+
 /** Game over against a lineup: on its board's top ten, enter initials (signed in) or sign in for it; or a custom mix's note. */
 function boardEntry(l: Lineup, score: number): BoardEntryOption | null {
   const key = boardOf(l);
@@ -776,8 +793,10 @@ function frame(now: number): void {
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
-  // The best game on this page: the recorded AI games, your best, and this game once it passes them.
-  setText(hiEl, Math.max(topAiScore, knownBest, topPlayerScore(boards), mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
+  // The best game on this page, and who holds it (the tooltip over HIGH SCORE).
+  const hi = highScore();
+  setText(hiEl, hi.score.toLocaleString('en-US'));
+  setText(hiTip, hi.who);
   // One fruit per level reached, the latest last, as along the cabinet's bottom edge (at most seven).
   const fruits = Array.from({ length: Math.min(state.level, 7) }, (_, i) => FRUIT_EMOJI[fruitForLevel(state.level - Math.min(state.level, 7) + 1 + i).kind] ?? '').join('');
   setText(fruitEl, fruits);

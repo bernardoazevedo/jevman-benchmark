@@ -137,7 +137,12 @@ main { display: block; padding-bottom: 96px; }
 /* The cabinet's top strip: who plays over the score, the high score in the middle, the ghosts where 2UP would be. */
 .arcade-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 12px; padding: 2px 4px 0; }
 .arcade-top .cell { display: grid; gap: 2px; min-width: 0; }
-.arcade-top .mid { justify-items: center; text-align: center; cursor: help; }
+.arcade-top .mid { position: relative; justify-items: center; text-align: center; outline: none; }
+/* Who holds the high score: an arcade tag above the cabinet, on hover or focus. */
+.hi-tip { position: absolute; left: 50%; bottom: calc(100% + 16px); z-index: 5; transform: translate(-50%, 4px); padding: 8px 10px; border: 2px solid var(--j-maze); border-radius: 4px; background: #000; color: #fff; font: 8px/1.5 var(--j-pixel); letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 140ms, transform 140ms; box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.7); }
+.hi-tip::after { content: ''; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--j-maze); }
+.arcade-top .mid:hover .hi-tip, .arcade-top .mid:focus-visible .hi-tip { opacity: 1; transform: translate(-50%, 0); }
+.arcade-top .mid:focus-visible small { color: var(--j-arc-yellow); }
 .arcade-top .end { justify-items: end; text-align: right; }
 .arcade-top small { max-width: 100%; font: 8px/1.4 var(--j-pixel); letter-spacing: 0.04em; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .arcade-top .cell:first-child small { color: #ff3b3b; } /* the player, red like 1UP */

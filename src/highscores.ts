@@ -39,9 +39,6 @@ export function placeFor(boards: Boards | null, board: string, score: number): n
   return place <= BOARD_SIZE ? place : null;
 }
 
-/** The best score on any board (the players' high score), or 0. */
-export const topPlayerScore = (boards: Boards | null): number => Math.max(0, ...Object.values(boards ?? {}).flatMap((l) => l.map((e) => e.score)));
-
 export type EntryResult = { ok: true; place: number | null; score: number; boards: Boards } | { ok: false; error: string; signedOut: boolean };
 
 /** Sends a finished game for a board: the server replays the recording for the score. */
