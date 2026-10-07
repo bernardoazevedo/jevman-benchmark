@@ -146,8 +146,10 @@ main { display: block; padding-bottom: 96px; }
 .arcade-bottom .play-cta { grid-column: 2; }
 .arcade-bottom .lives .pac { width: 16px; height: 16px; }
 .arcade-bottom .fruits { grid-column: 3; justify-self: end; max-width: 100%; overflow: hidden; white-space: nowrap; font-size: 17px; line-height: 1; letter-spacing: 3px; }
-.play-cta { border: 0; border-radius: 999px; background: var(--j-text); color: var(--j-bg); padding: 11px 24px; font: 600 15px/1.2 var(--j-display); white-space: nowrap; transition: background 120ms; }
-.play-cta:hover { background: var(--j-btn-hover); }
+/* Play, in the arcade's own look: the picker's PRESS START, yellow on black. */
+.play-cta { display: inline-flex; align-items: center; gap: 10px; border: 2px solid var(--j-arc-yellow); border-radius: 4px; background: #000; color: var(--j-arc-yellow); padding: 13px 18px; font: 11px/1 var(--j-pixel); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; box-shadow: 0 8px 22px -12px rgba(0, 0, 0, 0.7); transition: background 120ms, color 120ms; }
+.play-cta .tri { font-size: 10px; }
+.play-cta:hover { background: var(--j-arc-yellow); color: #000; }
 /* Equal gaps between the four, first flush left and last flush right (equal columns left the gaps uneven). */
 .hud { display: flex; justify-content: space-between; gap: 8px; padding: 0 4px 2px; }
 .hud span { display: grid; gap: 1px; min-width: 0; }
@@ -377,7 +379,7 @@ kbd { font: 500 11px var(--j-mono); border: 1px solid var(--j-line); border-bott
   .user-menu .name { display: none; }
   .lineup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ev .alt { display: none; }
-  .play-cta { padding: 10px 18px; font-size: 14px; }
+  .play-cta { padding: 12px 13px; font-size: 9.5px; gap: 8px; }
   .card { padding: 14px; gap: 10px; }
 }
 @media (pointer: coarse) { .keys { display: none; } }
