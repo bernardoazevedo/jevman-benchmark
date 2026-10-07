@@ -1,4 +1,4 @@
-import { modelName } from '../shared/models';
+import { DEFAULT_MODEL, modelName } from '../shared/models';
 import { ACTOR_NAMES, type Decision } from './brain';
 import { GHOST_COLORS } from './render';
 import type { SchedulerEvent } from './scheduler';
@@ -33,10 +33,18 @@ export class Panel {
   /** Card dropdowns appear once a game runs; before that the Play dialog is where models are picked. */
   private pickersOn = false;
 
-  /** `models` adds a model dropdown to each card the AI plays (live games only; a recording can't change). */
-  constructor(private readonly root: HTMLElement, opts: { caption?: string; models?: ModelPicking } = {}) {
+  /**
+   * `models` adds a model dropdown to each card the AI plays (live games only; a recording can't change). `playedBy`
+   * names the model of a recording, so the panel says plainly who is deciding.
+   */
+  constructor(private readonly root: HTMLElement, opts: { caption?: string; models?: ModelPicking; playedBy?: string } = {}) {
     this.models = opts.models;
-    root.innerHTML = `<h2>Decisions</h2><p class="explain">The odds the AI gave each way at its next junction; the brightest bar is its choice.</p><div class="banner" role="alert" hidden></div><div class="note" role="status" hidden></div><details class="totals"><summary></summary><div class="grid"></div></details><div class="cards"></div><h3>Decision log</h3><ol class="log"></ol>`;
+    const explain = opts.playedBy
+      ? `${opts.playedBy} is playing this recorded game as Pac-Man. The bars show the odds it gave each way at its next junction; the brightest is the way it chose.`
+      : 'The bars show the odds the AI gave each way at its next junction; the brightest is the way it chose.';
+    root.innerHTML = `<h2>AI decisions</h2><p class="explain"></p><div class="banner" role="alert" hidden></div><div class="note" role="status" hidden></div><details class="totals"><summary></summary><div class="grid"></div></details><div class="cards"></div><h3>Decision log</h3><ol class="log"></ol>`;
+    // The model name comes from a recording file: set as text, never as HTML.
+    root.querySelector<HTMLElement>('.explain')!.textContent = explain;
     if (opts.caption) {
       const caption = document.createElement('span');
       caption.className = 'caption';
@@ -55,6 +63,7 @@ export class Panel {
         `<header><span class="name">${ACTOR_NAMES[id]}</span><span class="status"></span></header>` +
         DIRS.map((d) => `<div class="bar" data-dir="${d}"><span class="arrow">${ARROWS[d]}</span><span class="track"><span class="fill"></span></span><span class="pct">–</span></div>`).join('') +
         `<footer class="meta">no decision yet</footer>`;
+      if (id === 'pacman' && opts.playedBy) el.querySelector('.name')!.textContent = `${ACTOR_NAMES[id]} · ${opts.playedBy}`;
       cards.append(el);
       const bars = Object.fromEntries(
         DIRS.map((d) => {
@@ -178,6 +187,18 @@ export class Panel {
     for (const [id, card] of this.cards) if (card.model) card.model.value = choice[id];
   }
 
+  /** The model that answered, as listed (TypeSafe's own id for jev reads as jev). */
+  private calledModel(d: Decision): string | undefined {
+    return d.model === 'jev-1.13.0' ? DEFAULT_MODEL : d.model;
+  }
+
+  /** Whether the answer came from another model than the card's dropdown shows. */
+  private otherThanShown(d: Decision): boolean {
+    const shown = this.cards.get(d.actor)?.model;
+    const called = this.calledModel(d);
+    return !!shown && !shown.hidden && !!called && called !== shown.value;
+  }
+
   private showDecision(e: Extract<SchedulerEvent, { type: 'decision' }>): void {
     const d = e.decision;
     this.totals.decisions += 1;
@@ -185,7 +206,9 @@ export class Panel {
     this.drawCard(
       d,
       d.source === 'jev'
-        ? `${d.model ? modelName(d.model) : 'jev'} · confidence ${d.confidence === null ? '?' : d.confidence.toFixed(2)} · ${e.latencyMs ?? '?'} ms`
+        // The model is named at the top of the card (its title on a recording, its dropdown live). Only while a newly
+        // picked model is still waking up, and the old one answers, does the footer say who did.
+        ? `${this.otherThanShown(d) ? `${modelName(this.calledModel(d)!)} · ` : ''}confidence ${d.confidence === null ? '?' : d.confidence.toFixed(2)} · ${e.latencyMs ?? '?'} ms`
         : `FALLBACK (${d.reason}) · greedy rule, not the model`,
       d.source === 'fallback',
     );
