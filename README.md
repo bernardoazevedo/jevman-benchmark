@@ -64,11 +64,27 @@ https deployments unless `JEV_ALLOW_DEV_KEY=1`. `npm run smoke` and `npm run ben
 This is also the easiest way to play jevman without an Opper account: clone the repo, add your
 TypeSafe key, `npm run dev`. The hosted page links here from its header, under "Sign in with Opper".
 
+### Option D — free credits for everyone (the hosted page)
+
+Set `OPPER_POOL_API_KEY` to an Opper API key whose money is meant for visitors. Signed-out visitors then play every
+mode on it, with no sign-in, until its balance runs out; the page header shows what is left (`$84.12 free credits`),
+where a signed-in player's name goes. Once it is empty, the page asks visitors to sign in and play on their own
+Opper account, as before. There is nothing to manage here: the key's organization balance *is* the pool, so give the
+key its own Opper organization and top that up whenever you like. The server reads the balance from Opper
+(`GET /v3/me`, every 30 s, and subtracts each call's cost in between), and Opper itself stops the key at zero.
+
+The pool pays only for what a game sends: requests of at most 16 KB and five questions, at most 8 a second per
+visitor (a game against four AI ghosts makes about 4), and `JEV_POOL_VISITOR_DAILY_USD` (default `1`) of pool money
+per visitor per UTC day, after which they too are asked to sign in. Visitors are told apart by IP address; behind
+proxies that append to `X-Forwarded-For`, set `JEV_TRUSTED_PROXIES` to how many (default `2` in production: CloudFront
+and the load balancer, else `0`). These limits are kept in memory per server; the balance is the hard limit.
+
 ### Which key is used
 
-A signed-in Login-with-Opper player always plays on their own key, through Opper. Otherwise the
-server uses `TYPESAFE_API_KEY` if set, else `OPPER_API_KEY`. Variables exported in your shell take
-precedence over `.env`. The account area in the page header says which one is in use.
+A signed-in Login-with-Opper player always plays on their own key, through Opper. Otherwise the free credits
+(`OPPER_POOL_API_KEY`) pay while they last, and then the server's local key: `TYPESAFE_API_KEY` if set, else
+`OPPER_API_KEY`. Variables exported in your shell take precedence over `.env`. The account area in the page header
+says which one is in use.
 
 ### Another model
 
@@ -197,7 +213,8 @@ Settings, all optional (empty serves the app at the root, as for local developme
   `OPPER_OAUTH_REDIRECT_URI`; set `JEVMAN_ALLOW_HTTP=1` to try a production build over plain http.
 
 Secrets live in SSM Parameter Store under `/opper/eu-north/jevman-benchmark/` (`OPPER_CLIENT_ID`,
-`OPPER_CLIENT_SECRET`, `SESSION_SECRET`). The image's entrypoint is Opper's
+`OPPER_CLIENT_SECRET`, `SESSION_SECRET`, and `OPPER_POOL_API_KEY` for the [free credits](#option-d--free-credits-for-everyone-the-hosted-page)).
+A new parameter reaches the app when its tasks next start (a deploy, or forcing a new deployment of the service). The image's entrypoint is Opper's
 [loadsecrets](https://github.com/opper-ai/opper-secrets), which exports every parameter under `OPPER_SSM_PREFIXES`
 into the environment and then starts the server; run the image elsewhere with `OPPER_SSM_PREFIXES='[]'` to skip SSM.
 The loadsecrets image is private, so building the image locally needs `docker login ghcr.io`

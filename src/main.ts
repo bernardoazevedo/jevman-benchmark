@@ -1,5 +1,5 @@
 import './style.css';
-import { accountNotice, fetchMe, renderAccount, takeAuthError, walletNotice, type AccountView } from './auth';
+import { accountNotice, fetchMe, renderAccount, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
 import { DemoPlayer, loadRecording } from './demo';
 import { hideOverlay, isClassic, showGameOver, showPlay, type GameOverExtra, type Sides } from './overlay';
 import { shareText, versus, versusLine } from './versus';
@@ -45,7 +45,10 @@ const thinking = new Thinking();
 let panel = new Panel(panelEl);
 
 const accountEl = $('#account');
-let account: AccountView = { kind: me.mode === 'player' ? 'player' : me.mode === 'dev' ? 'dev' : rec ? 'demo' : 'signed-out', me };
+let account: AccountView = {
+  kind: me.mode === 'player' ? 'player' : me.mode === 'pool' ? 'pool' : me.mode === 'dev' ? 'dev' : me.pool ? 'pool-empty' : rec ? 'demo' : 'signed-out',
+  me,
+};
 const showAccount = (view: AccountView) => {
   account = view;
   renderAccount(accountEl, view);
@@ -207,7 +210,13 @@ if (me.mode === 'none') {
 {
   let signedOutShown = false;
   let walletShown = false;
+  let poolEmptyShown = false;
   const hooks: TransportHooks = {
+    onPoolEmpty: () => {
+      if (poolEmptyShown) return; // once per page load, not once per failed call
+      poolEmptyShown = true;
+      showAccount({ kind: 'pool-empty', me: { ...me, mode: 'none', pool: { open: false, remainingUsd: 0 } } });
+    },
     onSignedOut: () => {
       if (signedOutShown) return; // render the aria-live region once per signed-in -> signed-out transition
       signedOutShown = true;
@@ -576,6 +585,17 @@ if (rec) {
   openPlay();
 }
 showAccount({ ...account, notice: accountNotice(me, authError, me.mode === 'none' && Boolean(rec)) });
+// The free credits tick down while people play: refresh the header's amount now and then, while the page is in view.
+if (me.mode === 'pool') {
+  setInterval(() => {
+    if (document.hidden || account.kind !== 'pool') return;
+    void fetchMe().then((fresh) => {
+      if (account.kind !== 'pool') return;
+      if (fresh.mode === 'pool') updatePoolAmount(accountEl, fresh.pool?.remainingUsd ?? null);
+      else if (fresh.mode === 'none' && fresh.pool && !fresh.unavailable) showAccount({ kind: 'pool-empty', me: fresh });
+    });
+  }, 60_000);
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || typeof e.key !== 'string') return;

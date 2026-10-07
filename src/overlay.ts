@@ -163,7 +163,15 @@ export function showPlay(
   let busyNote: string | null = null;
 
   if (signedOut) {
-    card.append(el('p', 'Sign in with Opper and pick a model to watch it play live. Calls bill your own Opper wallet, about $0.01 a game.', 'muted'));
+    card.append(
+      el(
+        'p',
+        me.pool
+          ? 'The free credits are used up for now. Sign in with Opper to watch the AI play live on your own account, about $0.01 a game.'
+          : 'Sign in with Opper and pick a model to watch it play live. Calls bill your own Opper wallet, about $0.01 a game.',
+        'muted',
+      ),
+    );
     signInBtn = signInButton(me, true);
     card.append(signInBtn);
     const more = el('div', undefined, 'more');
@@ -267,7 +275,9 @@ export function showPlay(
         'p',
         me.mode === 'player'
           ? 'About $0.01 a game from your Opper wallet per side the AI plays (Clef about $0.02); Beat the AI is free.'
-          : me.devProvider === 'typesafe'
+          : me.mode === 'pool'
+            ? 'Free while the shared credits last. Sign in to play on your own Opper account instead.'
+            : me.devProvider === 'typesafe'
             ? 'Calls use your TypeSafe key from .env.'
             : 'Calls use the local key from .env.',
         'muted small',

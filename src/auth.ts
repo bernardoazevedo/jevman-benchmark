@@ -1,7 +1,10 @@
 import { appPath } from './paths';
 
 export interface Me {
-  mode: 'player' | 'dev' | 'none';
+  /** player: signed in; pool: signed out, playing on the free credits; dev: the local key; none: signed out, no AI. */
+  mode: 'player' | 'pool' | 'dev' | 'none';
+  /** The free credits, when the server has them: open while their balance lasts. */
+  pool?: { open: boolean; remainingUsd: number | null };
   user?: { name?: string; email?: string };
   projectName?: string;
   walletUrl: string;
@@ -16,7 +19,7 @@ export interface Me {
 }
 
 export type AccountView = {
-  kind: 'player' | 'dev' | 'demo' | 'signed-out' | 'free';
+  kind: 'player' | 'pool' | 'pool-empty' | 'dev' | 'demo' | 'signed-out' | 'free';
   me: Me;
   notice?: string;
   /** Makes the notice a link (opened in a new tab), e.g. to the wallet. */
@@ -43,7 +46,7 @@ function httpsUrl(v: unknown): string {
 function parseMe(body: unknown): Me | null {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
   const b = body as Record<string, unknown>;
-  if (b.mode !== 'player' && b.mode !== 'dev' && b.mode !== 'none') return null;
+  if (b.mode !== 'player' && b.mode !== 'pool' && b.mode !== 'dev' && b.mode !== 'none') return null;
   const me: Me = { mode: b.mode, walletUrl: httpsUrl(b.walletUrl), loginAvailable: b.loginAvailable === true };
   if (typeof b.user === 'object' && b.user !== null) {
     const u = b.user as Record<string, unknown>;
@@ -54,6 +57,11 @@ function parseMe(body: unknown): Me | null {
   if (b.devProvider === 'opper' || b.devProvider === 'typesafe') me.devProvider = b.devProvider;
   const defaultModel = text(b.defaultModel);
   if (defaultModel) me.defaultModel = defaultModel;
+  if (typeof b.pool === 'object' && b.pool !== null) {
+    const p = b.pool as Record<string, unknown>;
+    const usd = typeof p.remainingUsd === 'number' && Number.isFinite(p.remainingUsd) ? Math.max(0, p.remainingUsd) : null;
+    me.pool = { open: p.open === true, remainingUsd: usd };
+  }
   if (Array.isArray(b.models)) me.models = b.models.filter((m): m is string => typeof m === 'string' && m.length > 0).slice(0, 20);
   return me;
 }
@@ -100,6 +108,19 @@ export function accountNotice(me: Me, authError: string | null, demo: boolean): 
   return undefined;
 }
 
+/** The notice once the free credits ran out during a visit (or the visitor used their share for today). */
+export const POOL_EMPTY_NOTICE = 'The free credits are used up. Sign in to keep playing on your own Opper account.';
+
+/** The free credits as the header shows them, e.g. "$84.12". */
+export const poolAmount = (usd: number | null): string | null => (usd === null ? null : `$${usd.toFixed(2)}`);
+
+/** Updates the free-credits amount in the header in place (no re-render, so nothing is announced). */
+export function updatePoolAmount(root: HTMLElement, usd: number | null): void {
+  const b = root.querySelector('.credits:not(.empty) b');
+  const amount = poolAmount(usd);
+  if (b && amount && b.textContent !== amount) b.textContent = amount;
+}
+
 /** The notice for a player whose Opper wallet ran dry (HTTP 402 from /api/decide). */
 export function walletNotice(walletUrl: string): { notice: string; noticeLink: string } {
   return { notice: 'Your Opper wallet is empty — top up to keep playing', noticeLink: httpsUrl(walletUrl) };
@@ -142,6 +163,22 @@ export function renderAccount(root: HTMLElement, view: AccountView): void {
     const out = el('button', 'Sign out');
     out.addEventListener('click', () => void signOut());
     actions.append(wallet, out);
+  } else if (view.kind === 'pool') {
+    // Signed out on the free credits: the only difference from signed in is this counter in place of the name.
+    const amount = poolAmount(me.pool?.remainingUsd ?? null);
+    const p = el('p', undefined, 'status credits');
+    p.append(el('span', undefined, 'dot'), el('b', amount ?? 'Free'), el('span', amount ? ' free credits' : ' credits', 'label'));
+    p.title = 'Shared free credits: anyone can play until they run out. Sign in to play on your own Opper account instead.';
+    // The amount ticks down while people play; that is not news for a screen reader.
+    p.setAttribute('aria-live', 'off');
+    text.append(p);
+    if (!retry) actions.append(signInButton(me));
+  } else if (view.kind === 'pool-empty') {
+    const p = el('p', undefined, 'status credits empty');
+    p.append(el('span', undefined, 'dot'), el('b', '$0.00'), el('span', ' free credits', 'label'));
+    p.title = POOL_EMPTY_NOTICE;
+    text.append(p);
+    actions.append(signInButton(me));
   } else if (view.kind === 'dev') {
     const p = el('p', undefined, 'status');
     p.append(el('span', 'Local key', 'badge'));

@@ -54,6 +54,18 @@ describe('createHttpTransport hooks', () => {
     expect(onWalletEmpty).not.toHaveBeenCalled();
   });
 
+  it('reports used-up free credits as such, not as a signed-out player', async () => {
+    const onSignedOut = vi.fn();
+    const onPoolEmpty = vi.fn();
+    stub(json({ error: 'The free credits are used up.', signedOut: true, poolEmpty: true }, 402));
+    await expect(createHttpTransport({ onSignedOut, onPoolEmpty })(req)).rejects.toThrow('free credits');
+    expect(onPoolEmpty).toHaveBeenCalledOnce();
+    expect(onSignedOut).not.toHaveBeenCalled();
+    stub(json({ error: 'The free credits are used up.', signedOut: true, poolEmpty: true }, 402));
+    expect(await warmUp('opper/clef', { onSignedOut, onPoolEmpty })).toMatchObject({ ok: false, account: true });
+    expect(onPoolEmpty).toHaveBeenCalledTimes(2);
+  });
+
   it('reports an empty wallet once, and only that', async () => {
     const onSignedOut = vi.fn();
     const onWalletEmpty = vi.fn();

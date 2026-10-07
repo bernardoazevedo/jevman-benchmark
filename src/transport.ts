@@ -6,6 +6,8 @@ const TIMEOUT_MS = 2500;
 
 export interface TransportHooks {
   onSignedOut?: () => void;
+  /** The free credits can't pay (any more): the visitor needs to sign in to keep playing. */
+  onPoolEmpty?: () => void;
   onWalletEmpty?: (url: string) => void;
 }
 
@@ -31,7 +33,8 @@ export function createHttpTransport(hooks: TransportHooks = {}): Transport {
     }
     if (!res.ok) {
       try {
-        if ((json as { signedOut?: boolean }).signedOut) hooks.onSignedOut?.();
+        if ((json as { poolEmpty?: boolean }).poolEmpty) hooks.onPoolEmpty?.();
+        else if ((json as { signedOut?: boolean }).signedOut) hooks.onSignedOut?.();
         if (res.status === 402 && typeof (json as { walletUrl?: unknown }).walletUrl === 'string') hooks.onWalletEmpty?.((json as { walletUrl: string }).walletUrl);
       } catch {
         // a faulty hook must not replace the server's error message
@@ -65,11 +68,13 @@ export async function warmUp(model: string | undefined, hooks: TransportHooks = 
       signal: AbortSignal.timeout(35_000),
     });
     if (res.ok) return { ok: true };
-    const json = (await res.json().catch(() => ({}))) as { error?: string; signedOut?: boolean; walletUrl?: unknown };
+    const json = (await res.json().catch(() => ({}))) as { error?: string; signedOut?: boolean; poolEmpty?: boolean; walletUrl?: unknown };
     const signedOut = json.signedOut === true;
+    const poolEmpty = json.poolEmpty === true;
     const wallet = res.status === 402 && typeof json.walletUrl === 'string';
     try {
-      if (signedOut) hooks.onSignedOut?.();
+      if (poolEmpty) hooks.onPoolEmpty?.();
+      else if (signedOut) hooks.onSignedOut?.();
       if (wallet) hooks.onWalletEmpty?.(json.walletUrl as string);
     } catch {
       // a faulty hook must not hide the result

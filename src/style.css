@@ -106,6 +106,12 @@ button:hover { border-color: var(--accent); }
 button:disabled, button[aria-disabled] { opacity: 0.45; cursor: not-allowed; }
 button:disabled:hover { border-color: #3a3a5a; }
 .account .hint { color: var(--muted); font-size: 12px; }
+/* The free credits: shown where a signed-in player's name goes. */
+.account .credits { gap: 7px; font-family: ui-monospace, monospace; font-weight: 600; color: #4ade80; }
+.account .credits .label { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; color: var(--muted); }
+.account .credits .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18); }
+.account .credits.empty { color: var(--danger); }
+.account .credits.empty .dot { box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.18); }
 .account .hint a { color: var(--muted); text-decoration: underline; }
 
 .board { position: relative; width: fit-content; max-width: 100%; }

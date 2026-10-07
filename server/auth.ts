@@ -1,6 +1,7 @@
 import { DECISION_MODELS, DEFAULT_MODEL } from '../shared/models.ts';
 import { randomBytes } from 'node:crypto';
 import { openSession, parseCookies, safeEqual, sealSession, serializeCookie, SESSION_MAX_AGE_S, type SessionData } from './session.ts';
+import type { PoolStatus } from './pool.ts';
 
 export const WALLET_URL = 'https://platform.opper.ai/wallet';
 export const SESSION_COOKIE = 'jevman_session';
@@ -23,6 +24,8 @@ export interface HttpRequest {
   url: string;
   /** Header names are lowercase, as Node's IncomingMessage provides them. */
   headers: Record<string, string | string[] | undefined>;
+  /** The connection's address (behind proxies, the last proxy's). */
+  remoteAddress?: string;
 }
 
 export interface HttpResponse {
@@ -178,8 +181,11 @@ export function handleLogout(req: HttpRequest, cfg: AuthConfig): HttpResponse {
   return json(200, { ok: true }, [clearSessionCookie(cfg)]);
 }
 
-/** `devProvider` is where the server's own key sends calls when nobody is signed in (undefined: no dev key). */
-export function handleMe(req: HttpRequest, cfg: AuthConfig, devProvider: 'opper' | 'typesafe' | undefined, env: Record<string, string | undefined> = process.env): HttpResponse {
+/**
+ * `devProvider` is where the server's own key sends calls when nobody is signed in (undefined: no dev key). `pool` is
+ * the free credits, if configured: signed out, they play with mode "pool" while open, else "none" (sign in to play).
+ */
+export function handleMe(req: HttpRequest, cfg: AuthConfig, devProvider: 'opper' | 'typesafe' | undefined, env: Record<string, string | undefined> = process.env, pool?: PoolStatus): HttpResponse {
   const session = sessionFrom(req, cfg);
   const base = { walletUrl: WALLET_URL, loginAvailable: loginConfigured(cfg) };
   // Which decision models this key can play, and the one used when the game names none (JEV_MODEL, else jev).
@@ -190,5 +196,7 @@ export function handleMe(req: HttpRequest, cfg: AuthConfig, devProvider: 'opper'
   if (session) {
     return json(200, { mode: 'player', user: session.user, ...(session.projectName ? { projectName: session.projectName } : {}), ...base, ...models('opper') });
   }
-  return json(200, devProvider ? { mode: 'dev', devProvider, ...base, ...models(devProvider) } : { mode: 'none', ...base });
+  if (pool?.open) return json(200, { mode: 'pool', pool, ...base, ...models('opper') });
+  if (devProvider) return json(200, { mode: 'dev', devProvider, ...base, ...models(devProvider), ...(pool ? { pool } : {}) });
+  return json(200, { mode: 'none', ...base, ...(pool ? { pool } : {}) });
 }

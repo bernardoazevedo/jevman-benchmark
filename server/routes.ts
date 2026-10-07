@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigured, opperExchange, redirect, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
+import { handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigured, opperExchange, redirect, sessionFrom, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
 import { normalizeBasePath } from './base-path.ts';
-import { handleDecideRequest, rejectDecideRequest } from './decide.ts';
+import { handleDecideRequest, poolLimitRequest, rejectDecideRequest, resolveKey, type PoolAccess } from './decide.ts';
 import { devTargetFromEnv, type JevTarget } from './jev.ts';
+import { limitsFromEnv, MAX_POOL_BODY_BYTES, poolFromEnv, trustedProxiesFromEnv, VisitorLimits } from './pool.ts';
 
 /** Largest /api/decide body read; a game state plus five questions is a few KB. */
 export const MAX_BODY_BYTES = 256 * 1024;
@@ -89,7 +90,7 @@ export function devKeyFromEnv(env: Record<string, string>, cfg: AuthConfig, warn
   return target;
 }
 
-const toHttp = (req: IncomingMessage): HttpRequest => ({ method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers });
+const toHttp = (req: IncomingMessage): HttpRequest => ({ method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, remoteAddress: req.socket?.remoteAddress });
 
 function send(res: ServerResponse, r: HttpResponse): void {
   res.statusCode = r.status;
@@ -125,15 +126,23 @@ function readBody(req: IncomingMessage, limit: number): Promise<string | null> {
   });
 }
 
+/** The free credits, when OPPER_POOL_API_KEY is set: signed-out visitors play on it until its balance runs out. */
+export function poolAccessFromEnv(env: Record<string, string>, cfg: AuthConfig, log: (msg: string) => void): PoolAccess | undefined {
+  const pool = poolFromEnv(env, cfg.opperUrl, log);
+  return pool ? { pool, limits: new VisitorLimits(limitsFromEnv(env)), trustedProxies: trustedProxiesFromEnv(env) } : undefined;
+}
+
 /**
  * Connect-style middleware for Login with Opper, the account endpoint and the jev proxy, for the Vite dev and
- * preview servers (or any Node HTTP server). The player and dev keys never leave the server.
+ * preview servers (or any Node HTTP server). The player, pool and dev keys never leave the server.
  */
-export function createJevMiddleware(env: Record<string, string>, logger: RouteLogger, opts: { quiet?: boolean } = {}): Middleware {
+export function createJevMiddleware(env: Record<string, string>, logger: RouteLogger, opts: { quiet?: boolean; poolAccess?: PoolAccess | null } = {}): Middleware {
   const cfg = authConfigFromEnv(env, (m) => logger.warn(m));
   const devKey = devKeyFromEnv(env, cfg, (m) => logger.warn(m));
-  if (!devKey && !loginConfigured(cfg) && !opts.quiet) logger.warn('[jev] none of TYPESAFE_API_KEY, OPPER_API_KEY or OPPER_CLIENT_ID/SECRET is set — jev cannot play');
-  const redactSecrets = (s: string) => [cfg.clientSecret, devKey?.apiKey].reduce<string>((acc, k) => (k ? acc.split(k).join('[redacted]') : acc), s);
+  const access = opts.poolAccess === undefined ? poolAccessFromEnv(env, cfg, (m) => logger.warn(m)) : (opts.poolAccess ?? undefined);
+  if (access && !opts.quiet) logger.info('[pool] free credits on: signed-out visitors play on OPPER_POOL_API_KEY until its balance runs out');
+  if (!devKey && !access && !loginConfigured(cfg) && !opts.quiet) logger.warn('[jev] none of TYPESAFE_API_KEY, OPPER_API_KEY, OPPER_POOL_API_KEY or OPPER_CLIENT_ID/SECRET is set — jev cannot play');
+  const redactSecrets = (s: string) => [cfg.clientSecret, devKey?.apiKey, access?.pool.apiKey].reduce<string>((acc, k) => (k ? acc.split(k).join('[redacted]') : acc), s);
   const baseExchange = opperExchange(cfg);
   // handleCallback maps any failure to /?auth_error=exchange; log why (message only, redacted, capped) so a misconfigured app is diagnosable.
   const exchange: typeof baseExchange = async (code) => {
@@ -156,14 +165,15 @@ export function createJevMiddleware(env: Record<string, string>, logger: RouteLo
       return;
     }
     if (path === '/auth/logout') return send(res, handleLogout(http, cfg));
-    if (path === '/api/me') return send(res, handleMe(http, cfg, devKey?.provider));
+    if (path === '/api/me') return send(res, handleMe(http, cfg, devKey?.provider, undefined, access?.pool.current()));
     if (path !== '/api/decide' && path !== '/api/warm') return next();
 
-    // Refuse what needs no body (wrong method, cross-site, not JSON, signed out) before reading any of it.
-    const refused = rejectDecideRequest(http, cfg, devKey);
+    // Refuse what needs no body (wrong method, cross-site, not JSON, signed out, over a free-credits limit) before reading any of it.
+    const refused = rejectDecideRequest(http, cfg, devKey, access) ?? poolLimitRequest(http, cfg, devKey, access);
     if (refused) return send(res, refused);
-    const redact = (s: string) => (devKey ? s.split(devKey.apiKey).join('[redacted]') : s);
-    readBody(req, MAX_BODY_BYTES)
+    const redact = redactSecrets;
+    const pooled = resolveKey(sessionFrom(http, cfg), devKey, cfg.opperUrl, access?.pool)?.mode === 'pool';
+    readBody(req, pooled ? MAX_POOL_BODY_BYTES : MAX_BODY_BYTES)
       .then(async (raw) => {
         if (raw === null) return send(res, json(413, { error: 'Request body too large' }, [], { Connection: 'close' }));
         const r = await handleDecideRequest(
@@ -178,6 +188,7 @@ export function createJevMiddleware(env: Record<string, string>, logger: RouteLo
             logError: (line) => logger.error(line),
           },
           { warm: path === '/api/warm' },
+          access,
         );
         send(res, r);
       })
