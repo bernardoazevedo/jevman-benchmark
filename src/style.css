@@ -107,19 +107,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 main { display: block; padding-bottom: 96px; }
 .col { width: calc(min(100%, 1280px) * 10 / 12); margin-inline: auto; }
 .col h1 { text-wrap: balance; }
-/* The H1 and the line under it each fit on one line on a laptop or wider (measured: 963px at 40px, 1014px at 20px). */
-@media (min-width: 768px) {
-  .oc .hero-h1 { font-size: clamp(32px, 3.3vw, 42px); line-height: 1.15; }
-  .oc .hero-sub { font-size: clamp(16px, 1.6vw, 20px); }
-}
-/* In place of an eyebrow: Pac-Man chomping toward three pellets. */
-@property --mouth { syntax: '<angle>'; inherits: false; initial-value: 28deg; }
-.hero-pac { display: flex; align-items: center; gap: 9px; height: 32px; }
-.hero-pac .pac { width: 30px; height: 30px; background: conic-gradient(var(--j-pac) 0 calc(90deg - var(--mouth)), transparent 0 calc(90deg + var(--mouth)), var(--j-pac) 0); animation: chomp 0.36s ease-in-out infinite alternate; }
-.hero-pac i { width: 6px; height: 6px; border-radius: 50%; background: #f4a58a; }
-@keyframes chomp { to { --mouth: 3deg; } }
-@media (prefers-reduced-motion: reduce) { .hero-pac .pac { animation: none; } }
-@media (max-width: 767px) { .hero-pac { align-self: flex-start; } } /* the hero text is left-aligned on phones */
+/* The H1 at the size of the page's section headings (the Leaderboard's), and a quieter line under it. */
+.oc .hero-sub { font-size: 16px; }
+@media (min-width: 768px) { .oc .hero-sub { font-size: 17px; } }
 
 /* ---------- the stage: board, plate, watch chips, activity ---------- */
 .stage { max-width: 1120px; margin: 0 auto; padding: 0 24px; display: grid; justify-items: center; gap: 14px; }
