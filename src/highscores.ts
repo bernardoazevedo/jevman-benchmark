@@ -70,14 +70,23 @@ export function stashPending(p: Omit<PendingScore, 'at'>): boolean {
   }
 }
 
-/** The game waiting for initials, once (it is removed as it is read), if it is recent. */
-export function takePending(now = Date.now()): PendingScore | null {
+/** The game waiting for initials, if it is recent (it stays saved until clearPending). */
+export function peekPending(now = Date.now()): PendingScore | null {
   try {
     const raw = sessionStorage.getItem(PENDING_KEY);
-    sessionStorage.removeItem(PENDING_KEY);
     const p = raw ? (JSON.parse(raw) as PendingScore) : null;
-    return p && BOARD_KEYS.includes(p.board) && now - p.at < PENDING_MS ? p : null;
+    if (p && BOARD_KEYS.includes(p.board) && now - p.at < PENDING_MS) return p;
+    if (raw) sessionStorage.removeItem(PENDING_KEY);
+    return null;
   } catch {
     return null;
+  }
+}
+
+export function clearPending(): void {
+  try {
+    sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // nothing saved
   }
 }

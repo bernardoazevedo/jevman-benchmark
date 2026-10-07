@@ -4,7 +4,7 @@ import { initialChoice, modelOptions, requestModel, type ModelChoice } from './c
 import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
-import { boardLabel, enterScore, fetchBoards, placeFor, stashPending, takePending, type Boards } from './highscores';
+import { boardLabel, clearPending, enterScore, fetchBoards, peekPending, placeFor, stashPending, type Boards } from './highscores';
 import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showInitialsEntry, showPicker, type BoardEntryOption, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
@@ -335,7 +335,7 @@ const setPaused = (p: boolean) => {
 /** The button under the board: "Play vs AI" while watching; "New game" while your own game is paused; else out of the way. */
 function syncPlayCta(): void {
   const midGame = mode.kind === 'play' && live && !gameOverShown;
-  playCta.hidden = picker !== null || (mode.kind === 'play' && !(midGame && paused));
+  playCta.hidden = picker !== null || entryOpen || (mode.kind === 'play' && !(midGame && paused));
   playLabel.textContent = midGame ? 'New game' : 'Play vs AI';
 }
 const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
@@ -434,12 +434,15 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
 
 /** Bumped whenever the board changes, so a recording that finishes downloading late doesn't take over. */
 let watchToken = 0;
+/** The initials card after signing in is open: like the picker, nothing else takes the board until it closes. */
+let entryOpen = false;
 
 /**
  * A chip under the board (or Watch in the leaderboard): that model's recorded benchmark game. The chip already
  * showing does nothing; in the middle of your own game it asks first.
  */
 function watch(model: string, confirmed = false): void {
+  if (entryOpen) return; // finish (or close) the initials first
   if (mode.kind === 'recording' && mode.model === model) return;
   if (!confirmed && mode.kind === 'play' && live && !gameOverShown) return askToLeave(model);
   notice(null);
@@ -480,7 +483,9 @@ const costNote = (): string => {
 
 /** "▶ Play against the AIs": who plays the ghosts, then Start. */
 function openPicker(): void {
-  if (picker) return;
+  if (picker || entryOpen) return;
+  watchToken += 1; // a recording still loading must not replace the picker when it arrives
+  setPlate();
   held = true;
   notice(null);
   dim(true);
@@ -618,7 +623,7 @@ function gameOver(): void {
           log.setOpen(true); // the drawer slides out; the page stays where it is
         }
       : null,
-    onBack: showRecording,
+    onBack: () => showRecording(),
   });
 }
 
@@ -840,19 +845,40 @@ function frame(now: number): void {
 const linked = new URLSearchParams(location.search).get('pacman');
 showRecording();
 if (linked && RECORDINGS[linked] !== undefined) watch(linked);
-// Back from signing in with a game that made a board: its initials now.
-const waiting = takePending();
-if (waiting && account.kind === 'player') {
+// Back from signing in with a game that made a board: its initials now, once the boards say its place. The game
+// stays saved until it is on the board or set aside (a failed sign-in keeps it for another try).
+const waiting = account.kind === 'player' ? peekPending() : null;
+if (waiting) {
+  entryOpen = true;
   held = true;
   dim(true);
-  showInitialsEntry(overlayEl, {
-    score: waiting.score,
-    entry: { kind: 'enter', board: waiting.board, place: placeFor(boards, waiting.board, waiting.score) ?? 1, submit: (initials) => submitScore(waiting.board, initials, waiting.recording) },
-    onDone: () => {
+  syncPlayCta();
+  void fetchBoards().then((b) => {
+    if (b) boards = b;
+    const place = placeFor(boards, waiting.board, waiting.score);
+    const close = () => {
+      clearPending();
+      entryOpen = false;
       held = false;
       hideOverlay(overlayEl);
       dim(false);
-    },
+      syncPlayCta();
+    };
+    if (place === null) return close(); // someone beat it while they signed in
+    showInitialsEntry(overlayEl, {
+      score: waiting.score,
+      entry: {
+        kind: 'enter',
+        board: waiting.board,
+        place,
+        submit: async (initials) => {
+          const r = await submitScore(waiting.board, initials, waiting.recording);
+          if (!('error' in r)) clearPending();
+          return r;
+        },
+      },
+      onDone: close,
+    });
   });
 }
 requestAnimationFrame(frame);
