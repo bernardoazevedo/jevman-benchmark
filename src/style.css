@@ -135,9 +135,10 @@ main { display: block; padding-bottom: 96px; }
 .arcade-top .end b { font-size: 14px; line-height: 21px; text-transform: uppercase; }
 /* The bottom strip: the lives on the left, a fruit per level on the right, Play between them. */
 .arcade-bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 44px; padding: 0 4px; }
-.arcade-bottom .lives { display: inline-flex; gap: 5px; }
+.arcade-bottom .lives { grid-column: 1; display: inline-flex; gap: 5px; }
+.arcade-bottom .play-cta { grid-column: 2; }
 .arcade-bottom .lives .pac { width: 16px; height: 16px; }
-.arcade-bottom .fruits { justify-self: end; max-width: 100%; overflow: hidden; white-space: nowrap; font-size: 17px; line-height: 1; letter-spacing: 3px; }
+.arcade-bottom .fruits { grid-column: 3; justify-self: end; max-width: 100%; overflow: hidden; white-space: nowrap; font-size: 17px; line-height: 1; letter-spacing: 3px; }
 .play-cta { border: 0; border-radius: 999px; background: var(--j-text); color: var(--j-bg); padding: 11px 24px; font: 600 15px/1.2 var(--j-display); white-space: nowrap; transition: background 120ms; }
 .play-cta:hover { background: var(--j-btn-hover); }
 /* Equal gaps between the four, first flush left and last flush right (equal columns left the gaps uneven). */
