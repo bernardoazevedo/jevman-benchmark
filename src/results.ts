@@ -1,5 +1,5 @@
 import { jointLeaders, type Community, type Leaderboard, type LeaderboardEntry } from '../shared/leaderboard';
-import { logoFor, makerOf } from './logos';
+import { logoFor, makerOf, pageOf } from './logos';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -35,7 +35,11 @@ export function renderLeaderboard(table: HTMLTableElement, sub: HTMLElement, boa
     const logo = logoFor(e.model);
     if (logo) mdl.append(logo);
     const who = el('div');
-    who.append(el('b', e.name), el('small', opts.self ? `Self-reported by ${opts.by}` : (makerOf(e.model) ?? '')), el('span', `${e.meanScore.toLocaleString('en-US')} ${margin(e)}`, 'score-m'));
+    // The name links to the model's page on opper.ai (specs, prices, routes); a self-reported model has none.
+    const page = opts.self ? undefined : pageOf(e.model);
+    const name = page ? Object.assign(el('a', undefined, 'mname'), { href: page }) : el('span', undefined, 'mname');
+    name.append(el('b', e.name));
+    who.append(name, el('small', opts.self ? `Self-reported by ${opts.by}` : (makerOf(e.model) ?? '')), el('span', `${e.meanScore.toLocaleString('en-US')} ${margin(e)}`, 'score-m'));
     mdl.append(who);
     const scw = el('div', undefined, 'scw');
     const bar = el('span', undefined, 'bar');

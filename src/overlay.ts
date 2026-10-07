@@ -224,49 +224,61 @@ export interface GameOverOptions {
   onBack: () => void;
 }
 
-/** The game-over card: the score, then who caught you (AI ghosts) or where you'd rank (classic ghosts). */
+/**
+ * The game-over card, in the arcade's look like the picker: GAME OVER, the score, then who caught you (AI ghosts) or
+ * where you'd rank among the models (classic ghosts), Play again and Share, and the way back.
+ */
 export function showGameOver(root: HTMLElement, o: GameOverOptions): void {
   const s = o.summary;
-  const card = el('div', undefined, 'card');
+  const card = el('div', undefined, 'card arc over');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Game over');
-  card.append(el('span', o.newBest ? 'Game over · new personal best' : 'Game over', 'eyebrow'), el('span', s.score.toLocaleString('en-US'), 'big-score'));
+  card.append(el('p', 'Game over', 'over-title'));
+  if (o.newBest) card.append(el('p', 'New personal best', 'over-best'));
+  card.append(el('p', s.score.toLocaleString('en-US'), 'over-score'));
+  // A dotted line, as on the roster: name on the left, number on the right.
+  const line = (left: (Node | string)[], right: string, color: string, cls = '') => {
+    const li = el('li', undefined, cls || undefined);
+    li.style.setProperty('--gc', color);
+    const lead = el('span', undefined, 'lead');
+    lead.setAttribute('aria-hidden', 'true');
+    const name = el('span', undefined, 'nm');
+    name.append(...left);
+    li.append(name, lead, el('span', right, 'num'));
+    return li;
+  };
   if (o.lineup) {
-    card.append(el('p', `You lasted ${clock(s.seconds)} against ${lineupNames(o.lineup)}.`, 'hint'));
+    card.append(el('p', `You lasted ${clock(s.seconds)} against ${lineupNames(o.lineup)}`, 'tap'));
     const by = new Map<GhostId, number>();
     for (const d of s.deaths) if (d.ghost) by.set(d.ghost, (by.get(d.ghost) ?? 0) + 1);
     if (by.size) {
-      const list = el('ul', undefined, 'caught');
-      for (const [g, n] of [...by].sort((a, b) => b[1] - a[1])) {
-        const li = el('li');
-        li.append(ghostIcon(g), el('span', `${GHOST_NAMES[g]} (${short(o.lineup[g])}) caught you`), el('span', `×${n}`, 'x'));
-        list.append(li);
-      }
-      card.append(list);
+      const list = el('ul', undefined, 'dots');
+      for (const [g, n] of [...by].sort((a, b) => b[1] - a[1])) list.append(line([ghostIcon(g, ARCADE_FILL[g]), `${GHOST_NAMES[g]} (${short(o.lineup[g])})`], `×${n}`, ARCADE_FILL[g]));
+      card.append(el('p', 'Caught by', 'colh'), list);
     }
   } else if (o.board?.entries.length) {
     // The classic ghosts are the benchmark's own game: place the score among the models.
     const v = versus(o.board, s.score);
-    card.append(el('p', v.beaten.length ? `You beat ${v.beaten.length} of ${v.total} AIs.` : 'No AI beaten yet. Try again!', 'hint'));
+    card.append(el('p', v.beaten.length ? `You beat ${v.beaten.length} of ${v.total} AIs` : 'No AI beaten yet. Try again!', 'tap'));
     const rows = [...o.board.entries.map((e) => ({ name: e.name, model: e.model, score: e.meanScore })), { name: 'You', model: '', score: s.score }].sort((a, b) => b.score - a.score);
-    const list = el('ol', undefined, 'ladder');
+    const list = el('ol', undefined, 'dots');
     rows.forEach((r, i) => {
-      const li = el('li', undefined, r.model ? (r.score < s.score ? 'beat' : '') : 'you');
-      const nm = el('span', undefined, 'nm');
       const logo = r.model ? logoFor(r.model) : null;
-      if (logo) nm.append(logo);
-      else if (!r.model) nm.append(el('span', undefined, 'pac'));
-      nm.append(r.name);
-      li.append(el('span', String(i + 1), 'r'), nm, el('span', r.score.toLocaleString('en-US'), 's'));
-      list.append(li);
+      const left: (Node | string)[] = [el('span', `${i + 1}`, 'rk')];
+      if (logo) left.push(logo);
+      left.push(r.name);
+      list.append(line(left, r.score.toLocaleString('en-US'), r.model ? (r.score < s.score ? '#ffffff' : '#6c7a96') : '#ffd800', r.model ? '' : 'you'));
     });
     card.append(list);
   }
-  const btns = el('div', undefined, 'btns');
-  const again = el('button', 'Play again', 'go');
+  const btns = el('div', undefined, 'over-btns');
+  const again = el('button', undefined, 'press');
   again.type = 'button';
+  const tri = el('span', '▶', 'tri');
+  tri.setAttribute('aria-hidden', 'true');
+  again.append(tri, el('span', 'Play again'));
   again.addEventListener('click', o.onPlayAgain);
-  const share = el('button', 'Share', 'go line');
+  const share = el('button', 'Share', 'press alt');
   share.type = 'button';
   share.addEventListener('click', () => {
     void o.onShare().then((r) => {
@@ -276,12 +288,12 @@ export function showGameOver(root: HTMLElement, o: GameOverOptions): void {
   btns.append(again, share);
   card.append(btns);
   if (o.onReview) {
-    const review = el('button', 'Review their moves ↓', 'linkbtn');
+    const review = el('button', 'Review their moves', 'back');
     review.type = 'button';
     review.addEventListener('click', o.onReview);
     card.append(review);
   }
-  const back = el('button', 'Back to watching', 'linkbtn');
+  const back = el('button', 'Back to watching', 'back');
   back.type = 'button';
   back.addEventListener('click', o.onBack);
   card.append(back);

@@ -232,6 +232,8 @@ let demo: DemoPlayer | null = null;
 /** Whether a live game runs (anything but a recording). */
 let live = false;
 let paused = false;
+/** The game on the board waits while the ghost picker is open, and carries on when it closes. */
+let held = false;
 let gameId = 0;
 let gameOverShown = false;
 /** Seconds of play in the live game, and in the recording on the board (each recording keeps its place, below). */
@@ -333,6 +335,7 @@ function showRecording(model: string = mode.kind === 'recording' ? mode.model : 
   leaveRecording();
   retire();
   watchToken += 1;
+  held = false;
   picker = null;
   overlayAction = null;
   hideOverlay(overlayEl);
@@ -375,6 +378,7 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   leaveRecording();
   retire();
   watchToken += 1;
+  held = false;
   demo = null;
   picker = null;
   overlayAction = null;
@@ -444,6 +448,7 @@ const costNote = (): string => {
 /** "▶ Play against the AIs": who plays the ghosts, then Start. */
 function openPicker(): void {
   if (picker) return;
+  held = true;
   notice(null);
   dim(true);
   playCta.hidden = true;
@@ -488,6 +493,7 @@ function openPicker(): void {
   if (canUseAI) for (const m of ghostModels()) void warming.warm(m);
 }
 function closePicker(): void {
+  held = false;
   picker = null;
   overlayAction = null;
   hideOverlay(overlayEl);
@@ -697,7 +703,7 @@ let shownLives = -1;
 function frame(now: number): void {
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
-  if (!paused) tick(dt);
+  if (!paused && !held) tick(dt);
   drawGame(ctx, state, now / 1000, paused);
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
   log.observe(state, demo ? recordingT : playT);
