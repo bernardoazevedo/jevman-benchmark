@@ -167,3 +167,46 @@ describe('crossSite', () => {
     expect(crossSite(req('/', headers, 'POST'))).toBe(expected);
   });
 });
+
+describe('below a base path', () => {
+  const based: AuthConfig = { ...cfg, basePath: '/jevman-benchmark', redirectUri: 'https://opper.ai/jevman-benchmark/auth/callback' };
+  const withState = (url: string) => req(url, { cookie: `${STATE_COOKIE}=st4te` });
+
+  it('scopes the state cookie to the sign-in routes below the prefix', () => {
+    const r = handleLogin(req('/auth/login'), based, () => 'st4te');
+    expect(setCookies(r)[0]).toBe(`${STATE_COOKIE}=st4te; Max-Age=600; Path=/jevman-benchmark/auth; HttpOnly; Secure; SameSite=Lax`);
+    expect(new URL(r.headers.Location as string).searchParams.get('redirect_uri')).toBe('https://opper.ai/jevman-benchmark/auth/callback');
+  });
+
+  it('scopes the session cookie to the app and returns to the app', async () => {
+    const r = await handleCallback(withState('/auth/callback?code=c&state=st4te'), based, async () => ({ apiKey: 'op-player', user: {} }), 10_000);
+    expect(r.headers.Location).toBe('/jevman-benchmark/');
+    const cookies = setCookies(r);
+    expect(cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`))).toMatch(/; Path=\/jevman-benchmark; HttpOnly; Secure; SameSite=Lax$/);
+    expect(cookies.find((c) => c.startsWith(`${STATE_COOKIE}=`))).toMatch(/Max-Age=0; Path=\/jevman-benchmark\/auth;/);
+  });
+
+  it('sends sign-in errors back to the app', async () => {
+    const r = await handleCallback(withState('/auth/callback?code=c&state=wrong'), based, vi.fn());
+    expect(r.headers.Location).toBe('/jevman-benchmark/?auth_error=state');
+  });
+
+  it('clears the session cookie on the same path at sign-out', () => {
+    const r = handleLogout(req('/auth/logout', { 'content-type': 'application/json' }, 'POST'), based);
+    expect(setCookies(r)).toEqual([`${SESSION_COOKIE}=; Max-Age=0; Path=/jevman-benchmark; HttpOnly; Secure; SameSite=Lax`]);
+  });
+});
+
+describe('crossSite behind proxies', () => {
+  it('never trusts X-Forwarded-Host (neither CloudFront nor the ALB sets it)', () => {
+    const headers = { origin: 'https://opper.ai', host: 'internal-alb.example', 'x-forwarded-host': 'opper.ai' };
+    expect(crossSite(req('/', headers, 'POST'))).toBe(true);
+  });
+  it('accepts the PUBLIC_BASE_URL origin and nothing else', () => {
+    const headers = (origin: string) => ({ origin, host: 'internal-alb.example' });
+    expect(crossSite(req('/', headers('https://opper.ai'), 'POST'), { publicOrigin: 'https://opper.ai' })).toBe(false);
+    expect(crossSite(req('/', headers('https://evil.example'), 'POST'), { publicOrigin: 'https://opper.ai' })).toBe(true);
+    expect(crossSite(req('/', { ...headers('https://opper.ai'), 'sec-fetch-site': 'cross-site' }, 'POST'), { publicOrigin: 'https://opper.ai' })).toBe(true);
+  });
+
+});

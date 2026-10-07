@@ -152,14 +152,14 @@ export interface DecideRequestDeps {
  */
 export function rejectDecideRequest(req: HttpRequest, cfg: AuthConfig, devKey: JevTarget | undefined): HttpResponse | null {
   if (req.method !== 'POST') return json(405, { error: 'POST only' }, [], { Allow: 'POST' });
-  if (crossSite(req)) return json(403, { error: 'Cross-site request refused' });
+  if (crossSite(req, cfg)) return json(403, { error: 'Cross-site request refused' });
   if (!header(req, 'content-type').toLowerCase().startsWith('application/json')) return json(415, { error: 'Expected application/json' });
   if (!resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl)) return json(401, { error: 'Sign in with Opper to let the AI play', signedOut: true });
   return null;
 }
 
 /** A cold Opper-hosted model can take many seconds to answer its first call after being idle. */
-export const WARM_TIMEOUT_MS = 25_000; // under the 35 s shutdown deadline minus the 5 s drain
+export const WARM_TIMEOUT_MS = 15_000; // a warm-up accepted late in the 5 s drain still ends before the 25 s shutdown deadline
 
 /** The fixed question /api/warm sends: the client only picks the model, never the content. */
 const WARM_UP = { state: { note: 'warm-up' }, questions: { warmup: { type: 'choice', instructions: 'Pick one.', criteria: { a: 'Option A', b: 'Option B' } } } };

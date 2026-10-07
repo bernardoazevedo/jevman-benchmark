@@ -12,6 +12,10 @@ export interface AuthConfig {
   redirectUri: string;
   opperUrl: string;
   sessionSecret: string;
+  /** APP_BASE_PATH, normalised ('' at the root): scopes the cookies and prefixes the app's own redirects. */
+  basePath?: string;
+  /** The public origin (PUBLIC_BASE_URL, e.g. https://opper.ai): an `Origin` with its host is same-site. */
+  publicOrigin?: string;
 }
 
 export interface HttpRequest {
@@ -46,19 +50,30 @@ export const header = (req: HttpRequest, name: string): string => {
 
 /**
  * True when the browser says the request came from another site: `Sec-Fetch-Site` other than `same-origin`,
- * or an `Origin` whose host is not this request's `Host`. Requests without either header (curl, old browsers) pass.
+ * or an `Origin` whose host is neither this request's `Host` nor PUBLIC_BASE_URL's (behind CloudFront and the ALB the
+ * Host is still opper.ai; neither sets X-Forwarded-Host, so that header is never trusted).
+ * Requests without either header (curl, old browsers) pass.
  */
-export function crossSite(req: HttpRequest): boolean {
+export function crossSite(req: HttpRequest, cfg: Pick<AuthConfig, 'publicOrigin'> = {}): boolean {
   const site = header(req, 'sec-fetch-site');
   if (site && site !== 'same-origin') return true;
   const origin = header(req, 'origin');
   if (!origin) return false;
   try {
-    return new URL(origin).host !== header(req, 'host');
+    const host = new URL(origin).host;
+    if (cfg.publicOrigin && host === new URL(cfg.publicOrigin).host) return false;
+    return host !== header(req, 'host');
   } catch {
     return true; // e.g. `Origin: null` from a sandboxed frame
   }
 }
+
+/** The session cookie's path: the whole app and nothing else on the host (`/jevman-benchmark` covers its subpaths). */
+export const sessionCookiePath = (cfg: AuthConfig): string => cfg.basePath || '/';
+/** The OAuth state cookie only travels to the sign-in routes. */
+export const stateCookiePath = (cfg: AuthConfig): string => `${cfg.basePath ?? ''}/auth`;
+/** An app path ('/', '/?auth_error=…') below the base path, for the server's redirects. */
+const appPath = (cfg: AuthConfig, path: string): string => `${cfg.basePath ?? ''}${path}`;
 
 export const redirect = (location: string, cookies: string[] = []): HttpResponse => ({
   status: 302,
@@ -73,9 +88,9 @@ export const json = (status: number, body: unknown, cookies: string[] = [], extr
 const text = (s: unknown): string | undefined => (typeof s === 'string' && s ? s : undefined);
 
 export function clearSessionCookie(cfg: AuthConfig): string {
-  return serializeCookie(SESSION_COOKIE, '', { maxAge: 0, path: '/', httpOnly: true, secure: secure(cfg) });
+  return serializeCookie(SESSION_COOKIE, '', { maxAge: 0, path: sessionCookiePath(cfg), httpOnly: true, secure: secure(cfg) });
 }
-const clearStateCookie = (cfg: AuthConfig) => serializeCookie(STATE_COOKIE, '', { maxAge: 0, path: '/auth', httpOnly: true, secure: secure(cfg) });
+const clearStateCookie = (cfg: AuthConfig) => serializeCookie(STATE_COOKIE, '', { maxAge: 0, path: stateCookiePath(cfg), httpOnly: true, secure: secure(cfg) });
 
 /** Token exchange per RFC 6749 §4.1.3 (form-encoded), normalising Opper's snake_case or camelCase fields. */
 export function opperExchange(cfg: AuthConfig, fetchImpl: typeof fetch = fetch): ExchangeCode {
@@ -116,12 +131,12 @@ export function handleLogin(_req: HttpRequest, cfg: AuthConfig, random = () => r
   const state = random();
   const params = new URLSearchParams({ client_id: cfg.clientId!, redirect_uri: cfg.redirectUri, response_type: 'code', state });
   return redirect(`${cfg.opperUrl.replace(/\/+$/, '')}/oauth/authorize?${params}`, [
-    serializeCookie(STATE_COOKIE, state, { maxAge: 600, path: '/auth', httpOnly: true, secure: secure(cfg) }),
+    serializeCookie(STATE_COOKIE, state, { maxAge: 600, path: stateCookiePath(cfg), httpOnly: true, secure: secure(cfg) }),
   ]);
 }
 
 export async function handleCallback(req: HttpRequest, cfg: AuthConfig, exchange: ExchangeCode, now = Date.now()): Promise<HttpResponse> {
-  const fail = (why: string) => redirect(`/?auth_error=${why}`, [clearStateCookie(cfg)]);
+  const fail = (why: string) => redirect(appPath(cfg, `/?auth_error=${why}`), [clearStateCookie(cfg)]);
   let url: URL;
   try {
     url = new URL(req.url, 'http://localhost');
@@ -146,8 +161,8 @@ export async function handleCallback(req: HttpRequest, cfg: AuthConfig, exchange
   if (result.expiresAt) session.expiresAt = result.expiresAt;
   const untilExpiry = result.expiresAt ? (Date.parse(result.expiresAt) - now) / 1000 : Infinity;
   const maxAge = Math.min(SESSION_MAX_AGE_S, Number.isFinite(untilExpiry) ? untilExpiry : SESSION_MAX_AGE_S);
-  return redirect('/', [
-    serializeCookie(SESSION_COOKIE, sealSession(session, cfg.sessionSecret), { maxAge, path: '/', httpOnly: true, secure: secure(cfg) }),
+  return redirect(appPath(cfg, '/'), [
+    serializeCookie(SESSION_COOKIE, sealSession(session, cfg.sessionSecret), { maxAge, path: sessionCookiePath(cfg), httpOnly: true, secure: secure(cfg) }),
     clearStateCookie(cfg),
   ]);
 }
@@ -158,7 +173,7 @@ export function sessionFrom(req: HttpRequest, cfg: AuthConfig, now = Date.now())
 
 export function handleLogout(req: HttpRequest, cfg: AuthConfig): HttpResponse {
   if (req.method !== 'POST') return json(405, { error: 'POST only' }, [], { Allow: 'POST' });
-  if (crossSite(req)) return json(403, { error: 'Cross-site request refused' });
+  if (crossSite(req, cfg)) return json(403, { error: 'Cross-site request refused' });
   if (!header(req, 'content-type').toLowerCase().startsWith('application/json')) return json(415, { error: 'Expected application/json' });
   return json(200, { ok: true }, [clearSessionCookie(cfg)]);
 }
