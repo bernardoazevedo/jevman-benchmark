@@ -160,12 +160,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     start = el('button', 'Start game', 'go');
     start.type = 'button';
     start.addEventListener('click', o.onStart);
-    const back = el('button', 'Back to watching', 'go line');
-    back.type = 'button';
-    back.addEventListener('click', o.onBack);
-    const row = el('div', undefined, 'btns');
-    row.append(back, start);
-    card.append(row, el('p', o.costNote, 'hint'));
+    card.append(start, el('p', o.costNote, 'hint'));
   } else {
     start = el('button', 'Log in to play', 'go');
     start.type = 'button';
@@ -176,7 +171,10 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     classic.addEventListener('click', o.onClassic);
     card.append(start, el('p', o.costNote, 'hint warn'), classic);
   }
-  card.append(status);
+  const back = el('button', 'Back to watching', 'linkbtn');
+  back.type = 'button';
+  back.addEventListener('click', o.onBack);
+  card.append(status, back);
   show(root, card, start);
   return {
     busy: (note) => {
@@ -265,25 +263,6 @@ export function showGameOver(root: HTMLElement, o: GameOverOptions): void {
   back.addEventListener('click', o.onBack);
   card.append(back);
   show(root, card, again);
-}
-
-/** The end of a game you watched: the AI's score next to its benchmark average. */
-export function showWatchOver(root: HTMLElement, o: { model: string; score: number; average: number | null; onAgain: () => void; onPlay: () => void }): void {
-  const card = el('div', undefined, 'card');
-  card.setAttribute('role', 'dialog');
-  card.setAttribute('aria-label', 'Game over');
-  card.append(el('span', 'Game over', 'eyebrow'), el('span', o.score.toLocaleString('en-US'), 'big-score'));
-  card.append(el('p', o.average === null ? `${modelName(o.model)} scored ${o.score.toLocaleString('en-US')}.` : `${modelName(o.model)} scored ${o.score.toLocaleString('en-US')}. Its benchmark average is ${o.average.toLocaleString('en-US')}.`, 'hint'));
-  const btns = el('div', undefined, 'btns');
-  const again = el('button', 'Watch again', 'go line');
-  again.type = 'button';
-  again.addEventListener('click', o.onAgain);
-  const play = el('button', '▶ Play against the AIs', 'go');
-  play.type = 'button';
-  play.addEventListener('click', o.onPlay);
-  btns.append(again, play);
-  card.append(btns);
-  show(root, card, play);
 }
 
 /** What Share posts after a game against AI ghosts. */

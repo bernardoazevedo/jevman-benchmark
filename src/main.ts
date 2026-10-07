@@ -4,13 +4,15 @@ import { initialChoice, modelOptions, requestModel, type ModelChoice } from './c
 import { DemoPlayer, loadRecording } from './demo';
 import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
-import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showPicker, showWatchOver, type Lineup, type Picker } from './overlay';
+import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showPicker, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
 import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { renderLeaderboard } from './results';
 import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { cuesBetween, snapshot, Sound } from './sound';
+import { RECORDINGS } from './recordings';
+import type { Recording } from './replay';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
 import { attachTouch } from './touch';
@@ -31,11 +33,24 @@ const LINEUP_KEY = 'jevman.ghosts';
 const BEST_KEY = 'jevman.best';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
-// The recorded benchmark game downloads alongside /api/me; it plays when the page opens, for everyone.
-const recording = loadRecording(appPath('/demo/jev-demo.json'));
+// Watch plays recorded benchmark games, one per model, fetched the first time each is picked. jev's downloads
+// alongside /api/me: it plays when the page opens, for everyone.
+const recordingLoads = new Map<string, Promise<Recording | null>>();
+const loadFor = (model: string): Promise<Recording | null> => {
+  let p = recordingLoads.get(model);
+  if (!p) {
+    p = loadRecording(appPath(RECORDINGS[model] ?? ''), 8000);
+    recordingLoads.set(model, p);
+    // A failed download can be tried again on the next click.
+    void p.then((r) => r ?? recordingLoads.delete(model));
+  }
+  return p;
+};
+const firstLoad = loadFor(DEFAULT_MODEL);
 const me = await fetchMe();
 const authError = takeAuthError();
-const rec = await recording;
+const rec = await firstLoad;
+const loaded = new Map<string, Recording>(rec ? [[DEFAULT_MODEL, rec]] : []);
 
 const canvas = $<HTMLCanvasElement>('#game');
 let state: GameState = createGame();
@@ -204,15 +219,15 @@ const warming = new ModelWarming({
 const problemOf = (models: string[]) => models.map((m) => warmProblems.get(m)).find((p) => p !== undefined);
 
 // ---------- what is on the board ----------
-type Mode = { kind: 'recording' } | { kind: 'watch'; model: string } | { kind: 'play'; lineup: Lineup | null };
-let mode: Mode = { kind: 'recording' };
+type Mode = { kind: 'recording'; model: string } | { kind: 'play'; lineup: Lineup | null };
+let mode: Mode = { kind: 'recording', model: DEFAULT_MODEL };
 let demo: DemoPlayer | null = null;
-/** Whether a live game runs (anything but the recording). */
+/** Whether a live game runs (anything but a recording). */
 let live = false;
 let paused = false;
 let gameId = 0;
 let gameOverShown = false;
-/** Seconds of play in the live game, and in the recording (which keeps its place while something else plays). */
+/** Seconds of play in the live game, and in the recording on the board (each recording keeps its place, below). */
 let playT = 0;
 let recordingT = 0;
 let clockMs = 0;
@@ -254,18 +269,17 @@ function setPlate(label: string | null = null): void {
     return;
   }
   const b = (text: string) => Object.assign(document.createElement('b'), { textContent: text });
-  if (mode.kind === 'recording' || mode.kind === 'watch') {
-    const model = mode.kind === 'watch' ? mode.model : (rec?.model ?? DEFAULT_MODEL);
-    plateLabel.replaceChildren(b(modelName(model)), ' vs the classic ghosts');
+  if (mode.kind === 'recording') {
+    plateLabel.replaceChildren(b(modelName(mode.model)), ' vs the classic ghosts');
   } else {
     plateLabel.replaceChildren(b('You'), mode.lineup ? ` vs ${lineupNames(mode.lineup)}` : ' vs the classic ghosts');
   }
 }
 
 function renderChips(): void {
-  const current = mode.kind === 'recording' ? (rec?.model ?? null) : mode.kind === 'watch' ? mode.model : null;
+  const current = mode.kind === 'recording' ? mode.model : null;
   chipsEl.replaceChildren(
-    ...WATCH_ORDER.filter((m) => offered.includes(m) || m === rec?.model).map((m) => {
+    ...WATCH_ORDER.filter((m) => RECORDINGS[m] !== undefined).map((m) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'chip';
@@ -274,7 +288,7 @@ function renderChips(): void {
       const logo = logoFor(m);
       if (logo) chip.append(logo);
       chip.append(modelName(m));
-      chip.title = m === rec?.model ? `${modelName(m)}'s recorded benchmark game` : `Watch ${modelName(m)} play live`;
+      chip.title = `${modelName(m)}'s recorded benchmark game`;
       chip.addEventListener('click', () => watch(m));
       return chip;
     }),
@@ -296,32 +310,52 @@ function retire(): void {
   live = false;
 }
 
-/** One player for the recording, so coming back to jev picks up where it was instead of starting over. */
-let recordingPlayer: DemoPlayer | null = null;
-const recordingSubject: Subject = { kind: 'pacman', model: rec?.model ?? DEFAULT_MODEL, recorded: true };
+/** One player per recording, so coming back to a model picks its game up where it was instead of starting over. */
+const players = new Map<string, { player: DemoPlayer; t: number }>();
+/** Before the board changes: the recording on it keeps its place. */
+function leaveRecording(): void {
+  if (mode.kind === 'recording') {
+    const p = players.get(mode.model);
+    if (p) p.t = recordingT;
+  }
+}
 
-/** The recorded benchmark game: plays when the page opens, costs nothing. */
-function showRecording(): void {
+/** A model's recorded benchmark game (jev's when the page opens). Costs nothing: no model is called. */
+function showRecording(model: string = mode.kind === 'recording' ? mode.model : DEFAULT_MODEL): void {
+  const r = loaded.get(model) ?? loaded.get(DEFAULT_MODEL);
+  if (r && !loaded.has(model)) model = DEFAULT_MODEL;
+  leaveRecording();
   retire();
+  watchToken += 1;
   picker = null;
   overlayAction = null;
   hideOverlay(overlayEl);
   dim(false);
-  mode = { kind: 'recording' };
+  mode = { kind: 'recording', model };
   playCta.hidden = false;
   setPaused(false);
-  if (rec) {
-    recordingPlayer ??= new DemoPlayer(rec, {
-      onLoop: () => {
-        recordingT = 0;
-        thinking.clear();
-        log.begin(recordingSubject);
-        sound.play('start');
-      },
-    });
-    demo = recordingPlayer;
+  const subject: Subject = { kind: 'pacman', model, recorded: true };
+  if (r) {
+    let entry = players.get(model);
+    if (!entry) {
+      const fresh: { player: DemoPlayer; t: number } = {
+        t: 0,
+        player: new DemoPlayer(r, {
+          onLoop: () => {
+            recordingT = 0;
+            thinking.clear();
+            log.begin(subject);
+            sound.play('start');
+          },
+        }),
+      };
+      entry = fresh;
+      players.set(model, entry);
+    }
+    demo = entry.player;
+    recordingT = entry.t;
     state = demo.state;
-    log.begin(recordingSubject);
+    log.begin(subject);
   } else {
     demo = null;
     state = createGame();
@@ -332,18 +366,20 @@ function showRecording(): void {
 
 /** A live game: an AI playing Pac-Man (watch), or you against AI ghosts or the classic ghosts (play). */
 function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
+  leaveRecording();
   retire();
+  watchToken += 1;
   demo = null;
   picker = null;
   overlayAction = null;
   mode = next;
-  choice = next.kind === 'watch' ? { ...base, pacman: next.model } : next.lineup ? { ...base, ...next.lineup } : { ...base };
-  state = createGame({ pacmanControl: next.kind === 'watch' ? 'jev' : 'keyboard', ghostsByAI: next.kind === 'play' && next.lineup !== null });
-  log.begin(next.kind === 'watch' ? { kind: 'pacman', model: next.model } : next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
+  choice = next.lineup ? { ...base, ...next.lineup } : { ...base };
+  state = createGame({ pacmanControl: 'keyboard', ghostsByAI: next.lineup !== null });
+  log.begin(next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
   hideOverlay(overlayEl);
   dim(false);
-  // Watching anything, the way to play stays on the board; playing, it is out of the way.
-  playCta.hidden = next.kind === 'play';
+  // Playing, the way to play is out of the way.
+  playCta.hidden = true;
   gameOverShown = false;
   playT = 0;
   live = true;
@@ -353,39 +389,42 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   renderChips();
 }
 
-/** The models a live game needs, woken first (an idle one can take seconds to answer its first call). */
-function wakeThen(models: string[], onWaiting: (cold: string[]) => void, start: () => void, onFail: (msg: string) => void): void {
-  const id = gameId;
-  void warming.warmAll(() => models, onWaiting).then((failed) => {
-    if (id !== gameId) return; // something else started meanwhile
-    if (failed.length) return onFail(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up in time. Try again in a moment.`);
-    start();
+/** Bumped whenever the board changes, so a recording that finishes downloading late doesn't take over. */
+let watchToken = 0;
+
+/**
+ * A chip under the board (or Watch in the leaderboard): that model's recorded benchmark game. The chip already
+ * showing does nothing; in the middle of your own game it asks first.
+ */
+function watch(model: string, confirmed = false): void {
+  if (mode.kind === 'recording' && mode.model === model) return;
+  if (!confirmed && mode.kind === 'play' && live && !gameOverShown) return askToLeave(model);
+  notice(null);
+  if (loaded.has(model)) return showRecording(model);
+  const token = ++watchToken;
+  setPlate(`Loading ${modelName(model)}'s game…`);
+  void loadFor(model).then((r) => {
+    if (token !== watchToken) return; // something else went on the board meanwhile
+    setPlate();
+    if (!r) return notice(`${modelName(model)}'s recorded game didn't load. Try again in a moment.`);
+    loaded.set(model, r);
+    showRecording(model);
   });
 }
 
-/** A chip under the board (or Watch in the leaderboard): the recording for jev, a live game for the others. */
-function watch(model: string): void {
+/** Watching another model would throw your game away: pause, and ask. */
+function askToLeave(model: string): void {
+  setPaused(true);
+  const end = Object.assign(document.createElement('button'), { type: 'button', textContent: 'End game' });
+  const keep = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Keep playing' });
+  end.addEventListener('click', () => watch(model, true));
+  keep.addEventListener('click', () => {
+    notice(null);
+    setPaused(false);
+  });
   notice(null);
-  if (rec && model === rec.model) return showRecording();
-  if (!canUseAI) return notice(`${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Log in to watch ${modelName(model)} play live on your own Opper account.`);
-  retire();
-  hideOverlay(overlayEl);
-  dim(false);
-  picker = null;
-  overlayAction = null;
-  playCta.hidden = false;
-  mode = { kind: 'watch', model };
-  renderChips();
-  setPlate(`Waking up ${modelName(model)}…`);
-  wakeThen(
-    [model],
-    () => {},
-    () => startGame({ kind: 'watch', model }),
-    (msg) => {
-      notice(msg);
-      showRecording();
-    },
-  );
+  noticeEl.append(`End your game and watch ${modelName(model)}? `, end, ' · ', keep);
+  noticeEl.hidden = false;
 }
 
 const costNote = (): string => {
@@ -499,12 +538,6 @@ function gameOver(): void {
   gameOverShown = true;
   dim(true);
   const summary = stats.summary(state);
-  if (mode.kind === 'watch') {
-    const model = mode.model;
-    const average = board?.entries.find((e) => e.model === model)?.meanScore ?? null;
-    overlayAction = () => watch(model);
-    return showWatchOver(overlayEl, { model, score: state.score, average, onAgain: () => watch(model), onPlay: openPicker });
-  }
   if (mode.kind !== 'play') return;
   const l = mode.lineup;
   let newBest = false;
@@ -615,9 +648,9 @@ void Promise.all([
       community,
       (model) => {
         watch(model);
-        $('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // back up to the board, hero and all
       },
-      (model) => offered.includes(model) || model === rec?.model,
+      (model) => RECORDINGS[model] !== undefined,
     );
   })
   .catch(() => {
@@ -676,5 +709,5 @@ function frame(now: number): void {
 // From an old "Watch Clef play" link (?pacman=…): straight to that model.
 const linked = new URLSearchParams(location.search).get('pacman');
 showRecording();
-if (linked && offered.includes(linked) && linked !== rec?.model) watch(linked);
+if (linked && RECORDINGS[linked] !== undefined) watch(linked);
 requestAnimationFrame(frame);
