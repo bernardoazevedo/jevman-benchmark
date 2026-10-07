@@ -187,10 +187,10 @@ export class ActivityLog {
   }
 
   private heading(): { title: string; sub: string } {
-    if (this.subject.kind === 'ghosts') return { title: this.over ? 'Their moves' : 'AI moves', sub: 'What the AIs playing the ghosts decided at each junction' };
-    if (this.subject.kind === 'classic') return { title: 'Your game', sub: 'The classic ghosts: no AI here, just the key moments' };
+    if (this.subject.kind === 'ghosts') return { title: this.over ? 'Their moves' : 'AI moves', sub: 'What the AIs playing the ghosts decided at each junction. The arrows on the board show the same odds.' };
+    if (this.subject.kind === 'classic') return { title: 'Your game', sub: 'The classic ghosts: no AI here, just the key moments.' };
     const name = this.subject.model ? modelName(this.subject.model) : 'The AI';
-    return { title: 'Activity', sub: `What ${name} decides at each junction, with its odds` };
+    return { title: 'Activity', sub: `What ${name} decides at each junction, with its odds. The arrows on the board show the same odds.` };
   }
 
   private renderHead(): void {
@@ -205,18 +205,19 @@ export class ActivityLog {
     const t = this.totals;
     const cells: [string, string][] = [
       ['Moves', t.moves.toLocaleString('en-US')],
-      ['Backup moves', t.backup.toLocaleString('en-US')],
+      ['Backup', t.backup.toLocaleString('en-US')],
       ['Thinks in', t.calls ? `${Math.round(t.latency / t.calls)} ms` : '–'],
       ['Cost', `$${t.cost.toFixed(4)}`],
     ];
+    // The same label-over-value cells as the game's score line, which they sit level with.
     this.totalsEl.replaceChildren(
       ...cells.map(([k, v]) => {
-        const d = el('div');
-        d.append(el('span', k), el('b', v));
+        const d = el('span');
+        d.append(el('small', k), el('b', v));
         return d;
       }),
     );
-    if (this.droppedEl) this.droppedEl.textContent = t.dropped ? `${t.dropped} late answers skipped` : '';
+    if (this.droppedEl) this.droppedEl.textContent = t.dropped ? `${t.dropped} late answers skipped.` : '';
   }
 
   private fillList(): void {
@@ -226,20 +227,18 @@ export class ActivityLog {
     if (this.filter === 'key' && !rows.some((e) => e.kind !== 'sep')) this.list.append(el('li', 'No key moments yet. Deaths, ghosts eaten and fruit show up here.', 'ev sep empty'));
   }
 
-  /** The panel beside the board: built once; games and filters only refill it, so opening it never jumps. */
+  /**
+   * The log beside the board, built once (games and filters only refill it, so opening it never jumps). Three rows
+   * that line up with the game's: the title with the filter, the totals, and the moves, which end where the board ends.
+   */
   private render(): void {
     if (!this.list) {
-      const panel = el('section', undefined, 'panel');
-      const head = el('div', undefined, 'head');
-      const titles = el('div');
-      this.titleEl = el('h3');
-      this.subEl = el('p');
-      titles.append(this.titleEl, this.subEl);
+      const head = el('div', undefined, 'lg lg-head');
+      this.titleEl = el('h3', undefined, 'lg-title');
       const close = el('button', '×', 'close');
       close.type = 'button';
       close.setAttribute('aria-label', 'Close the activity log');
       close.addEventListener('click', () => this.setOpen(false));
-      head.append(titles, close);
       const seg = el('div', undefined, 'seg');
       seg.setAttribute('role', 'group');
       seg.setAttribute('aria-label', 'Show');
@@ -254,15 +253,21 @@ export class ActivityLog {
         });
         seg.append(b);
       }
-      const bar = el('div', undefined, 'bar');
-      bar.append(seg);
-      this.totalsEl = el('div', undefined, 'totals');
+      head.append(this.titleEl, seg, close);
+      const totals = el('div', undefined, 'lg lg-totals');
+      this.totalsEl = el('div', undefined, 'hud');
+      this.totalsEl.setAttribute('aria-label', 'Activity totals');
+      totals.append(this.totalsEl);
+      const listRow = el('div', undefined, 'lg lg-list');
+      const inner = el('div', undefined, 'in');
       this.list = el('ol', undefined, 'log');
-      const foot = el('div', undefined, 'foot');
-      this.droppedEl = el('span');
-      foot.append(el('span', 'The arrows on the board show the same odds.'), this.droppedEl);
-      panel.append(head, bar, this.totalsEl, this.list, foot);
-      this.root.replaceChildren(panel);
+      const foot = el('p', undefined, 'lg-foot');
+      this.subEl = el('span');
+      this.droppedEl = el('span', undefined, 'dropped');
+      foot.append(this.subEl, ' ', this.droppedEl);
+      inner.append(this.list, foot);
+      listRow.append(inner);
+      this.root.replaceChildren(head, totals, listRow);
       for (const x of seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x.dataset.filter === this.filter));
     }
     this.renderHead();

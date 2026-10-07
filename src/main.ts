@@ -50,7 +50,6 @@ const scoreEl = $('#score');
 const levelEl = $('#level');
 const livesEl = $('#lives');
 const fruitEl = $('#fruit');
-const pausedEl = $('#paused');
 const noticeEl = $('#notice');
 const soundBtn = $<HTMLButtonElement>('#sound');
 /** Arcade sounds, on unless the visitor muted them (remembered). Browsers keep them silent until the first click or key. */
@@ -281,7 +280,6 @@ function renderChips(): void {
 
 const setPaused = (p: boolean) => {
   paused = p;
-  pausedEl.hidden = !p;
 };
 const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
 
@@ -555,6 +553,12 @@ boardEl.addEventListener('click', (e) => {
   togglePause();
 });
 playCta.addEventListener('click', openPicker);
+// A click anywhere outside the picker's card closes it, on the board or the page. (It runs after the board's own
+// handler, which leaves clicks on the overlay alone; a target no longer in the page was a card the picker replaced.)
+document.addEventListener('click', (e) => {
+  const t = e.target as Element;
+  if (picker && t.isConnected && !t.closest('.overlay .card, #play-cta')) closePicker();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && live && !paused && overlayEl.hidden) setPaused(true);
 });
@@ -649,7 +653,7 @@ function frame(now: number): void {
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
   if (!paused) tick(dt);
-  drawGame(ctx, state, now / 1000, false); // paused shows as a badge over the board, not on the maze
+  drawGame(ctx, state, now / 1000, paused);
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));

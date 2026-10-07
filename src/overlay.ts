@@ -108,7 +108,11 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   const card = el('div', undefined, 'card');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Who plays the ghosts?');
-  card.append(el('h3', 'Who plays the ghosts?'));
+  const close = el('button', '×', 'close');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', o.onBack);
+  card.append(close, el('h3', 'Who plays the ghosts?'));
   const grid = el('div', undefined, 'lineup');
   const chips = el('div', undefined, 'presets');
   chips.setAttribute('role', 'group');
@@ -153,10 +157,15 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   status.setAttribute('aria-live', 'polite');
   let start: HTMLButtonElement;
   if (o.canPlay) {
-    start = el('button', '▶ Start', 'go');
+    start = el('button', 'Start game', 'go');
     start.type = 'button';
     start.addEventListener('click', o.onStart);
-    card.append(start, el('p', o.costNote, 'hint'));
+    const back = el('button', 'Back to watching', 'go line');
+    back.type = 'button';
+    back.addEventListener('click', o.onBack);
+    const row = el('div', undefined, 'btns');
+    row.append(back, start);
+    card.append(row, el('p', o.costNote, 'hint'));
   } else {
     start = el('button', 'Log in to play', 'go');
     start.type = 'button';
@@ -168,16 +177,12 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     card.append(start, el('p', o.costNote, 'hint warn'), classic);
   }
   card.append(status);
-  const back = el('button', 'Back to watching', 'linkbtn');
-  back.type = 'button';
-  back.addEventListener('click', o.onBack);
-  card.append(back);
   show(root, card, start);
   return {
     busy: (note) => {
       if (!o.canPlay) return;
       start.toggleAttribute('aria-disabled', note !== null);
-      start.textContent = note ?? '▶ Start';
+      start.textContent = note ?? 'Start game';
     },
     note: (text) => {
       status.textContent = text ?? '';
