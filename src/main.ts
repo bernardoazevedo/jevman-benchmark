@@ -60,6 +60,7 @@ const ctx = canvas.getContext('2d')!;
 const boardEl = $('.board');
 const overlayEl = $('#overlay');
 const playCta = $<HTMLButtonElement>('#play-cta');
+const playLabel = $('#play-label');
 const plateLabel = $('#plate-label');
 const scoreEl = $('#score');
 const hiEl = $('#hi-score');
@@ -305,7 +306,14 @@ function renderChips(): void {
 
 const setPaused = (p: boolean) => {
   paused = p;
+  syncPlayCta();
 };
+/** The button under the board: "Play vs AI" while watching; "New game" while your own game is paused; else out of the way. */
+function syncPlayCta(): void {
+  const midGame = mode.kind === 'play' && live && !gameOverShown;
+  playCta.hidden = picker !== null || (mode.kind === 'play' && !(midGame && paused));
+  playLabel.textContent = midGame ? 'New game' : 'Play vs AI';
+}
 const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
 
 /** Ends whatever was running: answers still in flight reach the old scheduler and are ignored. */
@@ -341,7 +349,6 @@ function showRecording(model: string = mode.kind === 'recording' ? mode.model : 
   hideOverlay(overlayEl);
   dim(false);
   mode = { kind: 'recording', model };
-  playCta.hidden = false;
   setPaused(false);
   const subject: Subject = { kind: 'pacman', model, recorded: true };
   if (r) {
@@ -388,8 +395,6 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   log.begin(next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
   hideOverlay(overlayEl);
   dim(false);
-  // Playing, the way to play is out of the way.
-  playCta.hidden = true;
   gameOverShown = false;
   playT = 0;
   live = true;
@@ -451,7 +456,6 @@ function openPicker(): void {
   held = true;
   notice(null);
   dim(true);
-  playCta.hidden = true;
   const ghostModels = () => [...new Set(GHOST_IDS.map((g) => lineup[g]))];
   const p = showPicker(overlayEl, {
     lineup: () => lineup,
@@ -490,6 +494,7 @@ function openPicker(): void {
   });
   picker = p;
   overlayAction = p.action;
+  syncPlayCta();
   if (canUseAI) for (const m of ghostModels()) void warming.warm(m);
 }
 function closePicker(): void {
@@ -498,11 +503,13 @@ function closePicker(): void {
   overlayAction = null;
   hideOverlay(overlayEl);
   dim(false);
-  playCta.hidden = mode.kind === 'play';
+  syncPlayCta();
 }
 
 // ---------- game over ----------
 let board: Leaderboard | null = null;
+/** The best game any model played (the leaderboard's high score), until the leaderboard loads the best recorded one. */
+let topAiScore = TOP_RECORDED_SCORE;
 const readBest = (): number => {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -572,8 +579,7 @@ function gameOver(): void {
     onShare: () => shareScore(l ? aiShareText(summary, l, SHARE_URL) : board ? shareText(versus(board, summary.score), SHARE_URL) : `I scored ${summary.score} at jevman 🟡 ${SHARE_URL}`),
     onReview: l
       ? () => {
-          log.setOpen(true);
-          tvEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          log.setOpen(true); // the drawer slides out; the page stays where it is
         }
       : null,
     onBack: showRecording,
@@ -600,7 +606,9 @@ function togglePause(): void {
 }
 // A click on the game pauses it, another resumes (not on its cards, the Play button, the sound button or a note).
 boardEl.addEventListener('click', (e) => {
-  if ((e.target as Element).closest('.overlay, .play-cta, .board-notice, .sound-btn')) return;
+  const t = e.target as Element;
+  // A target no longer in the page was a card's button that just started a game: not a click on the game itself.
+  if (!t.isConnected || t.closest('.overlay, .play-cta, .board-notice, .sound-btn')) return;
   togglePause();
 });
 playCta.addEventListener('click', openPicker);
@@ -656,6 +664,8 @@ void Promise.all([
   .then(([b, community]) => {
     if (!b) return;
     board = b;
+    // The cabinet's HIGH SCORE: the best single game any model played in the benchmark.
+    topAiScore = Math.max(TOP_RECORDED_SCORE, ...b.entries.map((e) => e.bestScore ?? 0));
     renderLeaderboard(
       $<HTMLTableElement>('#leaderboard-table'),
       $('#leaderboard-sub'),
@@ -709,7 +719,7 @@ function frame(now: number): void {
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
   // The best game on this page: the recorded AI games, your best, and this game once it passes them.
-  setText(hiEl, Math.max(TOP_RECORDED_SCORE, knownBest, mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
+  setText(hiEl, Math.max(topAiScore, knownBest, mode.kind === 'play' ? state.score : 0).toLocaleString('en-US'));
   // One fruit per level reached, the latest last, as along the cabinet's bottom edge (at most seven).
   const fruits = Array.from({ length: Math.min(state.level, 7) }, (_, i) => FRUIT_EMOJI[fruitForLevel(state.level - Math.min(state.level, 7) + 1 + i).kind] ?? '').join('');
   setText(fruitEl, fruits);

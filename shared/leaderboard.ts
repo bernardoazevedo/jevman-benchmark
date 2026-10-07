@@ -30,6 +30,8 @@ export interface LeaderboardEntry {
   name: string;
   games: number;
   meanScore: number;
+  /** The best single game: not what the ranking uses (one game is mostly luck), but the high score to beat. */
+  bestScore?: number;
   /** Standard error of the mean score: about two of these either way is the margin of error. */
   scoreStdError?: number;
   meanSurvivedSeconds: number;
@@ -68,6 +70,7 @@ export function summarize(model: string, games: GameResult[], name: string = mod
     name,
     games: games.length,
     meanScore: round(mean((g) => g.score)),
+    bestScore: Math.max(0, ...games.map((g) => g.score)),
     scoreStdError: round(stdError(games.map((g) => g.score))),
     meanSurvivedSeconds: round(mean((g) => g.survived), 1),
     meanPellets: round(mean((g) => g.pellets)),

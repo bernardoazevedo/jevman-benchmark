@@ -24,7 +24,7 @@ export function renderLeaderboard(table: HTMLTableElement, sub: HTMLElement, boa
 
   const head = el('thead');
   const hr = el('tr');
-  for (const [label, cls] of [['#', ''], ['Model', ''], ['Mean score ± 95%', ''], ['Survival', 'r hide-n'], ['Latency', 'r hide-n'], ['Backup moves', 'r hide-n'], ['Cost / game', 'r hide-n'], ['', '']]) {
+  for (const [label, cls] of [['#', ''], ['Model', ''], ['Mean score ± 95%', ''], ['High score', 'r hide-n'], ['Survival', 'r hide-n'], ['Latency', 'r hide-n'], ['Backup moves', 'r hide-n'], ['Cost / game', 'r hide-n'], ['', '']]) {
     hr.append(el('th', label, cls || undefined));
   }
   head.append(hr);
@@ -66,6 +66,7 @@ export function renderLeaderboard(table: HTMLTableElement, sub: HTMLElement, boa
       el('td', rank, 'rk'),
       tdModel,
       tdScore,
+      cell(e.bestScore === undefined ? '–' : e.bestScore.toLocaleString('en-US')), // the best single game; the ranking uses the mean
       cell(`${e.meanSurvivedSeconds.toFixed(1)} s`),
       cell(e.meanLatencyMs === null ? '–' : `${e.meanLatencyMs} ms`),
       cell(`${(e.fallbackRate * 100).toFixed(1)}%`),

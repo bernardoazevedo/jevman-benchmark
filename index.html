@@ -85,7 +85,7 @@
             <!-- Laid out like the 1980 cabinet: who plays and the score, the high score, and the ghosts (where 2UP would be). -->
             <div class="arcade-top">
               <span class="cell"><small id="plate-label">jev 1.13</small><b id="score">0</b></span>
-              <span class="cell mid" title="The best game on this page: the six recorded AI games, and yours"><small>High score</small><b id="hi-score">0</b></span>
+              <span class="cell mid" title="The best single game: any model's in the benchmark, or yours once you beat it"><small>High score</small><b id="hi-score">0</b></span>
               <span class="cell end"><small>Ghosts</small><b id="ghosts-label">Classic</b></span>
             </div>
             <div class="board">
@@ -99,7 +99,7 @@
             <!-- The cabinet's bottom strip: lives on the left, the levels' fruit on the right, and Play between them. -->
             <div class="arcade-bottom">
               <span id="lives" class="lives" aria-label="Lives"></span>
-              <button id="play-cta" class="play-cta" type="button" hidden><span class="tri" aria-hidden="true">▶</span>Play vs AI</button>
+              <button id="play-cta" class="play-cta" type="button" hidden><span class="tri" aria-hidden="true">▶</span><span id="play-label">Play vs AI</span></button>
               <span id="fruit" class="fruits" title="Bonus fruit, one per level reached"></span>
             </div>
             <div class="dpad" id="dpad" hidden aria-label="Steer Pac-Man">
