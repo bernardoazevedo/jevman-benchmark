@@ -1,13 +1,22 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigured, opperExchange, redirect, sessionFrom, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
+import { crossSite, handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigured, opperExchange, redirect, sessionFrom, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
 import { normalizeBasePath } from './base-path.ts';
 import { handleDecideRequest, poolLimitRequest, rejectDecideRequest, resolveKey, type PoolAccess } from './decide.ts';
 import { devTargetFromEnv, type JevTarget } from './jev.ts';
+import { accountHash, cleanInitials, HighScores, highScoresFile } from './highscores.ts';
 import { MAX_POOL_BODY_BYTES, poolFromEnv, trustedProxiesFromEnv, VisitorLimits } from './pool.ts';
+import { BOARD_KEYS } from '../shared/lineups.ts';
 
 /** Largest /api/decide body read; a game state plus five questions is a few KB. */
 export const MAX_BODY_BYTES = 256 * 1024;
+/** Largest high-score entry read: a long game's recording (its frame steps, steering and the ghosts' answers). */
+export const MAX_SCORE_BODY_BYTES = 4 * 1024 * 1024;
+/** Entries one account may send an hour. */
+const SCORE_ENTRIES_PER_HOUR = 20;
+
+/** The high-score check (src/player-check.ts): loaded through Vite in development, from the server bundle in production. */
+export type PlayerCheck = (recording: unknown) => { ok: true; score: number } | { ok: false; error: string };
 const MAX_LOG_CHARS = 300;
 
 export interface RouteLogger {
@@ -136,7 +145,7 @@ export function poolAccessFromEnv(env: Record<string, string>, cfg: AuthConfig, 
  * Connect-style middleware for Login with Opper, the account endpoint and the jev proxy, for the Vite dev and
  * preview servers (or any Node HTTP server). The player, pool and dev keys never leave the server.
  */
-export function createJevMiddleware(env: Record<string, string>, logger: RouteLogger, opts: { quiet?: boolean; poolAccess?: PoolAccess | null } = {}): Middleware {
+export function createJevMiddleware(env: Record<string, string>, logger: RouteLogger, opts: { quiet?: boolean; poolAccess?: PoolAccess | null; loadPlayerCheck?: () => Promise<PlayerCheck>; highScores?: HighScores } = {}): Middleware {
   const cfg = authConfigFromEnv(env, (m) => logger.warn(m));
   const devKey = devKeyFromEnv(env, cfg, (m) => logger.warn(m));
   const access = opts.poolAccess === undefined ? poolAccessFromEnv(env, cfg, (m) => logger.warn(m)) : (opts.poolAccess ?? undefined);
@@ -154,9 +163,58 @@ export function createJevMiddleware(env: Record<string, string>, logger: RouteLo
     }
   };
 
+  const scores = opts.highScores ?? new HighScores(highScoresFile(env), (m) => logger.warn(m));
+  const entriesBy = new Map<string, number[]>();
+
+  /** POST /api/highscores: a signed-in player's initials and their game's recording; the server replays it for the score. */
+  const enterScore = (req: IncomingMessage, res: ServerResponse, http: HttpRequest) => {
+    if (crossSite(http, cfg)) return send(res, json(403, { error: 'Cross-site request refused' }));
+    if (!String(http.headers['content-type'] ?? '').includes('application/json')) return send(res, json(415, { error: 'Send JSON' }));
+    const session = sessionFrom(http, cfg);
+    if (!session) return send(res, json(401, { error: 'Sign in with Opper to enter your initials', signedOut: true }));
+    const who = accountHash(session.user, cfg.sessionSecret);
+    const now = Date.now();
+    const recent = (entriesBy.get(who) ?? []).filter((t) => now - t < 3_600_000);
+    if (recent.length >= SCORE_ENTRIES_PER_HOUR) return send(res, json(429, { error: 'Too many entries for now. Try again later.' }));
+    if (!opts.loadPlayerCheck) return send(res, json(503, { error: 'High scores are not available here' }));
+    const check = opts.loadPlayerCheck;
+    readBody(req, MAX_SCORE_BODY_BYTES)
+      .then(async (raw) => {
+        if (raw === null) return send(res, json(413, { error: 'Request body too large' }, [], { Connection: 'close' }));
+        let body: Record<string, unknown>;
+        try {
+          body = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          return send(res, json(400, { error: 'Bad JSON' }));
+        }
+        const board = typeof body.board === 'string' && BOARD_KEYS.includes(body.board) ? body.board : null;
+        const initials = cleanInitials(body.initials);
+        if (!board || !initials) return send(res, json(400, { error: 'Pick a lineup board and three letters' }));
+        const result = (await check())(body.recording);
+        if (!result.ok) {
+          logger.warn(`[highscores] refused an entry from ${who}: ${result.error}`);
+          return send(res, json(422, { error: 'That game did not check out' }));
+        }
+        entriesBy.set(who, [...recent, now]);
+        const place = scores.add(board, { initials, score: result.score, at: new Date(now).toISOString(), who });
+        logger.info(`[highscores] ${initials} ${result.score} on ${board}: ${place === null ? 'not in the top ten' : `#${place}`} (${who})`);
+        send(res, json(200, { place, score: result.score, boards: scores.view() }));
+      })
+      .catch((err) => {
+        logger.error(`[highscores] entry failed: ${String((err as Error)?.message ?? err).slice(0, MAX_LOG_CHARS)}`);
+        if (!res.headersSent) send(res, json(500, { error: 'internal error' }));
+        else abort(res);
+      });
+  };
+
   return (req, res, next) => {
     const path = (req.url ?? '').split('?')[0];
     const http = toHttp(req);
+    if (path === '/api/highscores') {
+      if (http.method === 'GET') return send(res, json(200, { boards: scores.view() }, [], { 'Cache-Control': 'no-store' }));
+      if (http.method === 'POST') return enterScore(req, res, http);
+      return send(res, json(405, { error: 'Method not allowed' }, [], { Allow: 'GET, POST' }));
+    }
     if (path === '/auth/login') return send(res, handleLogin(http, cfg));
     if (path === '/auth/callback') {
       void handleCallback(http, cfg, exchange)

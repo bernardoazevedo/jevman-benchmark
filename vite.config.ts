@@ -6,7 +6,7 @@ import { jevPlugin } from './server/plugin.ts';
 /** Where the app is published, for share links and social-card meta tags, unless VITE_PUBLIC_URL says otherwise. */
 const DEFAULT_APP_URL = 'https://opper.ai/jevman-benchmark/';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, isSsrBuild }) => {
   const env = loadEnv(mode, process.cwd(), ['OPPER_', 'SESSION_', 'JEV_', 'TYPESAFE_', 'APP_', 'PUBLIC_', 'TRUST_']);
   // APP_BASE_PATH (e.g. /jevman-benchmark) serves the whole app below that prefix; empty serves it at the root.
   const basePath = normalizeBasePath(env.APP_BASE_PATH);
@@ -21,7 +21,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_APP_URL': JSON.stringify(publicUrl ? `${publicUrl}${basePath}/` : DEFAULT_APP_URL),
     },
     plugins: [jevPlugin(env)],
-    build: { rollupOptions: { input: { main: 'index.html', leaderboard: 'leaderboard.html' } } },
+    // The page; or, with --ssr, the server's bundle of the game code (the high-score check), which needs no public files.
+    build: isSsrBuild ? { copyPublicDir: false } : { rollupOptions: { input: { main: 'index.html', leaderboard: 'leaderboard.html' } } },
     // Some tests replay whole games, which can take several seconds on a busy CI runner.
     test: { include: ['tests/**/*.test.ts'], testTimeout: 30_000 },
   };

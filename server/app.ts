@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
 import { mountedUrl, normalizeBasePath } from './base-path.ts';
-import { createJevMiddleware } from './routes.ts';
+import { createJevMiddleware, type PlayerCheck } from './routes.ts';
 
 export type Log = (event: string, details?: Record<string, unknown>) => void;
 
@@ -66,11 +66,16 @@ export function createApp(opts: AppOptions): App {
   const basePath = normalizeBasePath(opts.env.APP_BASE_PATH);
   const env = Object.fromEntries(Object.entries(opts.env).filter((e): e is [string, string] => typeof e[1] === 'string'));
   // Throws for an https deployment without a real SESSION_SECRET, before anything listens.
-  const jev = createJevMiddleware(env, {
-    info: (msg) => log('jev', { msg }),
-    warn: (msg) => log('warn', { msg }),
-    error: (msg) => log('error', { msg }),
-  });
+  const jev = createJevMiddleware(
+    env,
+    {
+      info: (msg) => log('jev', { msg }),
+      warn: (msg) => log('warn', { msg }),
+      error: (msg) => log('error', { msg }),
+    },
+    // The high-score check: the game's code bundled for the server at build time (vite build --ssr src/player-check.ts).
+    { loadPlayerCheck: () => import(new URL('../dist-ssr/player-check.js', import.meta.url).href).then((m: { checkPlayerGame: PlayerCheck }) => m.checkPlayerGame) },
+  );
   let ready = false;
   let draining = false;
   let shutdownPromise: Promise<'clean' | 'deadline'> | null = null;

@@ -16,6 +16,8 @@ COPY scripts ./scripts
 COPY submissions ./submissions
 # Replays every submitted game; a submission that does not check out fails the build.
 RUN node --import tsx scripts/submissions.ts && APP_BASE_PATH="${APP_BASE_PATH}" VITE_PUBLIC_URL="${VITE_PUBLIC_URL}" npx vite build
+# The game's own code for the server's high-score check (it replays each entered game), as one file in dist-ssr.
+RUN npx vite build --ssr src/player-check.ts --outDir dist-ssr
 
 # The server on its own, without Opper's secrets loader (CI builds this target for pull requests from forks, which
 # cannot pull the private loadsecrets image).
@@ -33,6 +35,7 @@ COPY --chown=node:node package.json ./
 COPY --chown=node:node server ./server
 COPY --chown=node:node shared ./shared
 COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/dist-ssr ./dist-ssr
 USER node
 EXPOSE 3000
 # /health answers at the root whatever APP_BASE_PATH is.
