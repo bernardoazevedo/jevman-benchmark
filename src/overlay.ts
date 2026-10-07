@@ -10,6 +10,8 @@ export type Lineup = Record<GhostId, string>;
 
 export const GHOST_NAMES: Record<GhostId, string> = { blinky: 'Blinky', pinky: 'Pinky', inky: 'Inky', clyde: 'Clyde' };
 const GHOST_FILL: Record<GhostId, string> = { blinky: '#e53935', pinky: '#f48fb1', inky: '#26c6da', clyde: '#ffa726' };
+/** The arcade's own ghost colours, for the picker's attract-screen roster. */
+const ARCADE_FILL: Record<GhostId, string> = { blinky: '#ff0000', pinky: '#ffb8ff', inky: '#00ffff', clyde: '#ffb852' };
 
 /** The mixed lineup: a different AI behind each ghost, like the arcade original where every ghost had its own mind. */
 const MIXED: Lineup = { blinky: 'opper/clef', pinky: 'typesafe/jev-1.13.0', inky: 'opper/kev-4b', clyde: 'openai/gpt-6-luna-decisions' };
@@ -50,7 +52,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: 
 }
 
 /** A ghost in its arcade colour, for the picker, the game-over card and the activity log. */
-export function ghostIcon(id: GhostId): SVGSVGElement {
+export function ghostIcon(id: GhostId, fill = GHOST_FILL[id]): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 14 14');
@@ -60,7 +62,7 @@ export function ghostIcon(id: GhostId): SVGSVGElement {
     for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
     svg.append(e);
   };
-  shape('path', { d: 'M1 13.2V6.4a6 6 0 0 1 12 0v6.8l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6Z', fill: GHOST_FILL[id] });
+  shape('path', { d: 'M1 13.2V6.4a6 6 0 0 1 12 0v6.8l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6Z', fill });
   for (const [cx, px] of [[4.9, 5.4], [9.3, 9.8]]) {
     shape('circle', { cx: String(cx), cy: '6.2', r: '1.7', fill: '#fff' });
     shape('circle', { cx: String(px), cy: '6.5', r: '0.85', fill: '#1f3fd8' });
@@ -103,44 +105,57 @@ export interface Picker {
   action: () => void;
 }
 
-/** "Who plays the ghosts?": the four ghosts with their models, presets, and Start. */
+/** A model's name on the arcade roster: short, and GPT-6 Luna as just Luna (its logo says OpenAI). */
+const rosterName = (model: string) => short(model).replace(/^GPT-6 /, '');
+
+/**
+ * "Who plays the ghosts?", as the arcade's attract screen: one line per ghost in its colour, dotted across to its
+ * model (a tap switches it), the lineups as arcade options, PRESS START, the cost, and the way back.
+ */
 export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
-  const card = el('div', undefined, 'card');
+  const card = el('div', undefined, 'card arc');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Who plays the ghosts?');
-  const close = el('button', '×', 'close');
+  const close = el('button', '✕', 'x');
   close.type = 'button';
   close.setAttribute('aria-label', 'Close');
   close.addEventListener('click', o.onBack);
-  card.append(close, el('h3', 'Who plays the ghosts?'));
-  const grid = el('div', undefined, 'lineup');
-  const chips = el('div', undefined, 'presets');
-  chips.setAttribute('role', 'group');
-  chips.setAttribute('aria-label', 'Lineups');
+  const head = el('div', undefined, 'colh');
+  head.append(el('span', 'Ghost'), el('span', 'AI model'));
+  card.append(close, el('p', 'Who plays the ghosts?', 'ttl'), head);
+  const roster = el('ol', undefined, 'roster');
+  const opts = el('div', undefined, 'opts');
+  opts.setAttribute('role', 'group');
+  opts.setAttribute('aria-label', 'Lineups');
   const all = presets(o.offered);
   const render = () => {
     const lineup = o.lineup();
-    grid.replaceChildren(
+    roster.replaceChildren(
       ...GHOST_IDS.map((g) => {
-        const b = el('button', undefined, 'gh');
+        const li = el('li');
+        const b = el('button');
         b.type = 'button';
+        b.style.setProperty('--gc', ARCADE_FILL[g]);
         b.title = `Switch ${GHOST_NAMES[g]}'s AI model`;
         b.setAttribute('aria-label', `${GHOST_NAMES[g]}: ${modelName(lineup[g])}. Switch model`);
-        const label = el('span', undefined, 'gl');
+        const md = el('span', undefined, 'md');
         const logo = logoFor(lineup[g]);
-        if (logo) label.append(logo);
-        label.append(el('b', short(lineup[g])));
-        b.append(ghostIcon(g), el('span', GHOST_NAMES[g], 'gn'), label);
+        if (logo) md.append(logo);
+        md.append(rosterName(lineup[g]));
+        const lead = el('span', undefined, 'lead');
+        lead.setAttribute('aria-hidden', 'true');
+        b.append(ghostIcon(g, ARCADE_FILL[g]), el('span', GHOST_NAMES[g], 'gn'), lead, md);
         b.addEventListener('click', () => {
           o.onChange({ ...lineup, [g]: nextModel(lineup[g], o.offered) });
           render();
         });
-        return b;
+        li.append(b);
+        return li;
       }),
     );
-    chips.replaceChildren(
+    opts.replaceChildren(
       ...all.map((p) => {
-        const b = el('button', p.label);
+        const b = el('button', p.label.replace(/GPT-6 /, ''));
         b.type = 'button';
         b.setAttribute('aria-pressed', String(sameLineup(p.lineup, lineup)));
         b.addEventListener('click', () => {
@@ -152,35 +167,43 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     );
   };
   render();
-  card.append(grid, chips, el('p', 'Tap a ghost to switch its AI model.', 'hint'));
-  const status = el('p', undefined, 'hint');
+  card.append(roster, el('p', 'Tap a ghost to switch its AI', 'tap'), opts);
+  const status = el('p', undefined, 'tap');
   status.setAttribute('aria-live', 'polite');
+  // The marker blinks, the words stay: a button that blinks out entirely reads as broken.
+  const press = (label: string) => {
+    const b = el('button', undefined, 'press');
+    b.type = 'button';
+    const tri = el('span', '▶', 'tri');
+    tri.setAttribute('aria-hidden', 'true');
+    b.append(tri, el('span', label, 'lbl'));
+    return b;
+  };
   let start: HTMLButtonElement;
   if (o.canPlay) {
-    start = el('button', 'Start game', 'go');
-    start.type = 'button';
+    start = press('Press start');
     start.addEventListener('click', o.onStart);
-    card.append(start, el('p', o.costNote, 'hint'));
+    card.append(start, el('p', o.costNote, 'cost'));
   } else {
-    start = el('button', 'Log in to play', 'go');
-    start.type = 'button';
+    start = press('Log in to play');
     start.disabled = !o.loginAvailable;
     start.addEventListener('click', o.onLogin);
-    const classic = el('button', 'Play the classic ghosts instead (free)', 'go line');
+    const classic = el('button', 'Play the classic ghosts instead (free)', 'back');
     classic.type = 'button';
     classic.addEventListener('click', o.onClassic);
-    card.append(start, el('p', o.costNote, 'hint warn'), classic);
+    card.append(start, el('p', o.costNote, 'cost warn'), classic);
   }
-  const back = el('button', 'Back to watching', 'linkbtn');
+  const back = el('button', 'Back to watching', 'back');
   back.type = 'button';
   back.addEventListener('click', o.onBack);
   card.append(status, back);
   show(root, card, start);
+  const startLabel = start.querySelector<HTMLElement>('.lbl')!;
   return {
     busy: (note) => {
       if (!o.canPlay) return;
       start.toggleAttribute('aria-disabled', note !== null);
-      start.textContent = note ?? 'Start game';
+      startLabel.textContent = note ?? 'Press start';
     },
     note: (text) => {
       status.textContent = text ?? '';

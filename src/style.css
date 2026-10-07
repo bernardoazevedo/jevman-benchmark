@@ -1,6 +1,7 @@
 /* jevman on opper.ai: the AI Roundtable look (light, navy, Wix Madefor), with the black arcade board as the centre. */
 @font-face { font-family: 'Wix Madefor Display'; src: url('/fonts/wix-madefor-display-latin.woff2') format('woff2'); font-weight: 400 800; font-display: swap; }
 @font-face { font-family: 'Wix Madefor Text'; src: url('/fonts/wix-madefor-text-latin.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: 'Press Start 2P'; src: url('/fonts/press-start-2p-latin.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
 
 :root {
@@ -33,6 +34,10 @@
   --j-display: 'Wix Madefor Display', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --j-body: 'Wix Madefor Text', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --j-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --j-pixel: 'Press Start 2P', 'JetBrains Mono', ui-monospace, monospace; /* the arcade's lettering */
+  --j-maze: #2121de;
+  --j-arc-yellow: #ffd800;
+  --j-arc-dim: #6c7a96;
 }
 /* Dark: opper.ai's dark palette (its .dark variables), on <html class="dark"> as on the site. */
 html.dark {
@@ -156,12 +161,13 @@ main { display: block; padding-bottom: 96px; }
 }
 .tv.log-open .side-log { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .drawer-tab {
-  position: absolute; top: 50%; right: -1px; transform: translate(100%, -50%); z-index: 2; display: flex; align-items: center; gap: 8px;
-  writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--j-line); border-left: 0; border-radius: 0 12px 12px 0;
-  background: var(--j-card); color: var(--j-text); font: 600 12px var(--j-display); box-shadow: 8px 0 20px -14px rgba(27, 46, 64, 0.4); transition: opacity 160ms, background 120ms;
+  position: absolute; top: 50%; right: -1px; transform: translate(100%, -50%); z-index: 2; display: flex; align-items: center; gap: 9px;
+  writing-mode: vertical-rl; padding: 14px 7px; border: 2px solid var(--j-maze); border-left: 0; border-radius: 0 10px 10px 0;
+  background: #000; color: var(--j-arc-yellow); font: 700 11px/1 var(--j-mono); letter-spacing: 0.14em; text-transform: uppercase;
+  box-shadow: 8px 0 20px -14px rgba(0, 0, 0, 0.6); transition: opacity 160ms, background 120ms;
 }
-.drawer-tab:hover { background: var(--j-soft); }
-.drawer-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: #2ba36b; box-shadow: 0 0 0 3px rgba(43, 163, 107, 0.16); }
+.drawer-tab:hover { background: #0b0b2a; }
+.drawer-tab .tpac { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: rotate(90deg); background: conic-gradient(var(--j-arc-yellow) 0 60deg, transparent 0 120deg, var(--j-arc-yellow) 0); }
 .tv.log-open .drawer-tab { opacity: 0; pointer-events: none; }
 .lg-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 14px; }
 .lg-title { margin: 0; font: 700 15px var(--j-display); white-space: nowrap; }
@@ -178,7 +184,8 @@ main { display: block; padding-bottom: 96px; }
 @media (max-width: 1239px) {
   .tv { margin-bottom: 30px; transition: margin-bottom 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .tv.log-open { margin-bottom: calc(var(--drawer-h) + 14px); }
-  .drawer-tab { top: 100%; right: auto; left: 50%; transform: translate(-50%, -1px); writing-mode: horizontal-tb; padding: 7px 16px 8px; border: 1px solid var(--j-line); border-top: 0; border-radius: 0 0 12px 12px; box-shadow: 0 10px 20px -14px rgba(27, 46, 64, 0.4); }
+  .drawer-tab { top: 100%; right: auto; left: 50%; transform: translate(-50%, -1px); writing-mode: horizontal-tb; padding: 8px 16px 9px; border: 2px solid var(--j-maze); border-top: 0; border-radius: 0 0 10px 10px; box-shadow: 0 10px 20px -14px rgba(0, 0, 0, 0.6); }
+  .drawer-tab .tpac { transform: none; }
   .side-log { top: calc(100% + 14px); bottom: auto; left: 0; right: 0; width: auto; height: var(--drawer-h); transform: translateY(-16px); }
   .tv.log-open .side-log { transform: none; }
 }
@@ -222,6 +229,39 @@ main { display: block; padding-bottom: 96px; }
 .card { position: relative; }
 .card h3 { margin: 0; padding-inline: 36px; font: 700 17px var(--j-display); }
 .card > .close { position: absolute; top: 10px; right: 10px; }
+/* The ghost picker as the arcade's attract screen: black, the maze's double blue wall, pixel lettering. Same in both themes. */
+.card.arc { gap: 12px; border-radius: 6px; padding: 18px 16px 16px; background: #000; color: #e9ecf1; border: 2px solid var(--j-maze); box-shadow: inset 0 0 0 3px #000, inset 0 0 0 5px var(--j-maze), 0 20px 50px -20px rgba(0, 0, 0, 0.8); font-family: var(--j-pixel); text-transform: uppercase; }
+.arc .x { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; padding: 0; border: 0; background: none; color: var(--j-arc-dim); font: 12px/1 var(--j-pixel); }
+.arc .x:hover { color: var(--j-arc-yellow); }
+.arc .ttl { margin: 2px 0 0; padding-inline: 30px; font: 11px/1.6 var(--j-pixel); color: #fff; }
+.arc .colh { display: flex; justify-content: space-between; padding: 0 6px; font: 8px/1 var(--j-pixel); color: #8f97ff; letter-spacing: 0.04em; }
+.roster { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.roster button { width: 100%; display: grid; grid-template-columns: 18px auto minmax(10px, 1fr) auto; align-items: center; gap: 8px; padding: 6px; border: 0; border-radius: 3px; background: none; color: var(--gc); font: 10px/1.4 var(--j-pixel); text-align: left; text-transform: uppercase; }
+.roster button:hover, .roster button:focus-visible { background: rgba(33, 33, 222, 0.28); }
+.roster svg { width: 18px; height: 18px; }
+.roster .lead { height: 2px; background: radial-gradient(circle, #f4b6a6 1px, transparent 1.5px) 0 50% / 8px 2px repeat-x; }
+.roster .md { display: inline-flex; align-items: center; gap: 6px; color: #fff; white-space: nowrap; }
+.roster .md .logo { width: 14px; height: 14px; }
+.arc .mono-mark { filter: invert(1); } /* OpenAI's black mark: white on the arcade's black, in both themes */
+.arc .tap { margin: 0; font: 8px/1.6 var(--j-pixel); color: var(--j-arc-dim); }
+.arc .opts { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; }
+.arc .opts button { border: 0; background: none; padding: 4px 2px; font: 9px/1.4 var(--j-pixel); color: var(--j-arc-dim); white-space: nowrap; text-transform: uppercase; }
+.arc .opts button:hover { color: #fff; }
+.arc .opts button[aria-pressed='true'] { color: var(--j-arc-yellow); }
+.arc .opts button[aria-pressed='true']::before { content: '>'; margin-right: 5px; }
+.arc .press { justify-self: center; display: inline-flex; align-items: center; gap: 10px; border: 2px solid var(--j-arc-yellow); border-radius: 4px; background: none; padding: 11px 18px; font: 12px/1 var(--j-pixel); color: var(--j-arc-yellow); letter-spacing: 0.04em; text-transform: uppercase; transition: background 120ms, color 120ms; }
+.arc .press .tri { font-size: 10px; animation: blink 1.1s steps(1) infinite; }
+.arc .press:hover { background: var(--j-arc-yellow); color: #000; }
+.arc .press:hover .tri { animation: none; }
+.arc .press[aria-disabled] { cursor: progress; }
+.arc .press[aria-disabled] .tri { animation: none; }
+@keyframes blink { 50% { opacity: 0; } }
+.arc .cost { margin: 0; font: 8px/1.8 var(--j-pixel); color: var(--j-arc-dim); }
+.arc .cost.warn { color: #ff8a65; }
+.arc .back { justify-self: center; border: 0; background: none; padding: 2px; font: 8px/1.5 var(--j-pixel); color: #fff; text-transform: uppercase; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--j-maze); }
+.arc .back:hover { color: var(--j-arc-yellow); }
+@media (max-width: 520px) { .card.arc { padding: 16px 12px 14px; } .roster button { font-size: 8.5px; gap: 6px; padding: 5px 4px; } .arc .ttl { font-size: 10px; } }
+@media (prefers-reduced-motion: reduce) { .arc .press .tri { animation: none; } }
 .card p { margin: 0; }
 .card .hint, .hint { font-size: 12.5px; color: var(--j-muted); margin: 0; }
 .card .warn { color: var(--j-danger); }
