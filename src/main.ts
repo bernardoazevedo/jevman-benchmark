@@ -1,5 +1,3 @@
-import './opper-chrome.css';
-import './style.css';
 import { ActivityLog, type Subject } from './activity';
 import { accountNotice, fetchMe, POOL_EMPTY_NOTICE, poolAmount, renderAccount, renderDrawerAccount, signIn, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
 import { initialChoice, modelOptions, requestModel, type ModelChoice } from './choice';
@@ -468,6 +466,16 @@ const writeBest = (score: number) => {
   }
 };
 const touchScreen = matchMedia('(pointer: coarse)').matches;
+// The theme follows the system while the visitor hasn't picked one on opper.ai (index.html sets it before the first paint).
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+  let picked: string | null = null;
+  try {
+    picked = localStorage.getItem('theme');
+  } catch {
+    // storage blocked: follow the system
+  }
+  if (picked !== 'dark' && picked !== 'light') document.documentElement.classList.toggle('dark', e.matches);
+});
 /** The system share sheet on phones (where people share from), else the clipboard. */
 async function shareScore(text: string): Promise<'shared' | 'copied' | 'failed' | 'cancelled'> {
   if (navigator.share && touchScreen) {

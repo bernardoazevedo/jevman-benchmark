@@ -188,7 +188,7 @@ export function renderDrawerAccount(root: HTMLElement, view: AccountView): void 
     root.replaceChildren(out);
     return;
   }
-  const signUp = el('a', 'Sign up', 'dark');
+  const signUp = el('a', 'Sign up', 'solid');
   signUp.href = 'https://opper.ai/sign-up/free';
   const login = el('button', 'Login');
   login.type = 'button';

@@ -23,6 +23,18 @@
     <meta name="twitter:title" content="jevman: a Pac-Man benchmark for decision models | Opper AI" />
     <meta name="twitter:description" content="Six AI decision models played Pac-Man in real time against the classic arcade ghosts. See the leaderboard, watch their games, or play against them." />
     <meta name="twitter:image" content="%VITE_APP_URL%og.png" />
+    <!-- The theme before the first paint, as on opper.ai: the visitor's choice there (same origin), else the system's. -->
+    <script>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem('theme'); } catch (e) {}
+        var dark = t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+      })();
+    </script>
+    <!-- Linked here rather than imported from the script, so the page never paints unstyled. -->
+    <link rel="stylesheet" href="/src/opper-chrome.css" />
+    <link rel="stylesheet" href="/src/style.css" />
     <!-- Plausible, as on opper.ai: cookieless, proxied first-party by the site (same origin in production). -->
     <script async defer data-api="/proxy/api/event" data-domain="opper.ai" src="/js/script.js"></script>
     <script>window.plausible = window.plausible || function () { (window.plausible.q = window.plausible.q || []).push(arguments); };</script>
