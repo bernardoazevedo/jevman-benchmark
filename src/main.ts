@@ -8,11 +8,10 @@ import { greedyChoice, optionFeatures } from './features';
 import { logoFor } from './logos';
 import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showPicker, showWatchOver, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
-import { drawGame, TILE } from './render';
+import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { renderLeaderboard } from './results';
 import { Scheduler } from './scheduler';
-import { createGame, jevActors, step, type Controls, type GameState } from './sim';
-import { cuesBetween, snapshot, Sound } from './sound';
+import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
 import { attachTouch } from './touch';
@@ -47,12 +46,12 @@ const ctx = canvas.getContext('2d')!;
 const boardEl = $('.board');
 const overlayEl = $('#overlay');
 const playCta = $<HTMLButtonElement>('#play-cta');
-const plateTag = $('#plate-tag');
 const plateLabel = $('#plate-label');
 const scoreEl = $('#score');
+const levelEl = $('#level');
 const livesEl = $('#lives');
-const pauseBtn = $<HTMLButtonElement>('#pause');
-const muteBtn = $<HTMLButtonElement>('#mute');
+const fruitEl = $('#fruit');
+const pausedEl = $('#paused');
 const noticeEl = $('#notice');
 const dpad = $('#dpad');
 const chipsEl = $('#watch-chips');
@@ -64,8 +63,8 @@ const logToggle = $<HTMLButtonElement>('#log-toggle');
 const log = new ActivityLog($('#activity'), {
   onOpenChange: (open) => {
     tvEl.classList.toggle('log-open', open);
-    logToggle.textContent = open ? '‹ Hide log' : 'Activity log ›';
     logToggle.setAttribute('aria-expanded', String(open));
+    logToggle.setAttribute('aria-label', open ? 'Hide the activity log' : 'Show the activity log');
     try {
       localStorage.setItem(LOG_KEY, open ? '1' : '0');
     } catch {
@@ -127,23 +126,6 @@ const notice = (text: string | null) => {
   clearTimeout(noticeTimer);
   if (text) noticeTimer = window.setTimeout(() => (noticeEl.hidden = true), 10_000);
 };
-
-// ---------- sound ----------
-const sound = new Sound();
-const showSound = () => {
-  muteBtn.textContent = sound.enabled ? '🔊' : '🔇';
-  muteBtn.setAttribute('aria-pressed', String(!sound.enabled));
-  muteBtn.title = sound.enabled ? 'Mute (M)' : 'Unmute (M)';
-};
-showSound();
-const toggleSound = () => {
-  sound.toggle();
-  sound.unlock();
-  showSound();
-};
-muteBtn.addEventListener('click', toggleSound);
-// Browsers allow audio only after a gesture; any click or key unlocks it (iOS counts only the end of a tap).
-for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => sound.unlock(), { passive: true });
 
 // ---------- models ----------
 const offered = modelOptions(me).map((o) => o.id);
@@ -248,10 +230,8 @@ const controls: Controls = {
 };
 
 const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
-/** The line under the board. Its tag is always there (only its text changes), so nothing shifts when switching. */
+/** The line above the board: who is playing whom. */
 function setPlate(label: string | null = null): void {
-  plateTag.hidden = false;
-  plateTag.textContent = mode.kind === 'recording' ? 'Benchmark game' : mode.kind === 'watch' ? 'Live' : 'Your game';
   if (label !== null) {
     plateLabel.textContent = label;
     return;
@@ -286,8 +266,7 @@ function renderChips(): void {
 
 const setPaused = (p: boolean) => {
   paused = p;
-  pauseBtn.textContent = p ? '▶' : 'II';
-  pauseBtn.setAttribute('aria-label', p ? 'Resume' : 'Pause');
+  pausedEl.hidden = !p;
 };
 const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
 
@@ -352,7 +331,6 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   playT = 0;
   live = true;
   setPaused(document.hidden);
-  sound.play('start');
   setPlate();
   renderChips();
 }
@@ -544,7 +522,11 @@ function togglePause(): void {
   }
   setPaused(!paused);
 }
-pauseBtn.addEventListener('click', togglePause);
+// A click on the game pauses it, another resumes (not on its cards, the Play button or a note).
+boardEl.addEventListener('click', (e) => {
+  if ((e.target as Element).closest('.overlay, .play-cta, .board-notice')) return;
+  togglePause();
+});
 playCta.addEventListener('click', openPicker);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && live && !paused && overlayEl.hidden) setPaused(true);
@@ -578,7 +560,6 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && picker) return closePicker();
   const k = e.key.toLowerCase();
   if (k === 'p') togglePause();
-  if (k === 'm') toggleSound();
 });
 
 // ---------- the leaderboard below ----------
@@ -623,11 +604,9 @@ function tick(dt: number): void {
   clockMs += dt * 1000;
   scheduler.update(state);
   stats.beforeStep(state);
-  const heard = snapshot(state);
   step(state, dt, controls);
   stats.afterStep(state, dt);
   if (state.status === 'playing') playT += dt;
-  for (const cue of cuesBetween(heard, state)) sound.play(cue);
   if (state.status === 'gameover') gameOver();
 }
 
@@ -639,10 +618,13 @@ function frame(now: number): void {
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
   if (!paused) tick(dt);
-  drawGame(ctx, state, now / 1000, paused);
+  drawGame(ctx, state, now / 1000, false); // paused shows as a badge over the board, not on the maze
   if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
   log.observe(state, demo ? recordingT : playT);
   setText(scoreEl, state.score.toLocaleString('en-US'));
+  setText(levelEl, String(state.level));
+  const fruit = fruitForLevel(state.level);
+  setText(fruitEl, `${FRUIT_EMOJI[fruit.kind] ?? ''} ${fruit.points}`);
   if (state.lives !== shownLives) {
     shownLives = state.lives;
     livesEl.replaceChildren(...Array.from({ length: Math.max(0, state.lives) }, () => Object.assign(document.createElement('span'), { className: 'pac' })));
