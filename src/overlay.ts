@@ -11,7 +11,7 @@ export type Lineup = Record<GhostId, string>;
 export const GHOST_NAMES: Record<GhostId, string> = { blinky: 'Blinky', pinky: 'Pinky', inky: 'Inky', clyde: 'Clyde' };
 const GHOST_FILL: Record<GhostId, string> = { blinky: '#e53935', pinky: '#f48fb1', inky: '#26c6da', clyde: '#ffa726' };
 /** The arcade's own ghost colours, for the picker's attract-screen roster. */
-const ARCADE_FILL: Record<GhostId, string> = { blinky: '#ff0000', pinky: '#ffb8ff', inky: '#00ffff', clyde: '#ffb852' };
+export const ARCADE_FILL: Record<GhostId, string> = { blinky: '#ff0000', pinky: '#ffb8ff', inky: '#00ffff', clyde: '#ffb852' };
 
 /** The mixed lineup: a different AI behind each ghost, like the arcade original where every ghost had its own mind. */
 const MIXED: Lineup = { blinky: 'opper/clef', pinky: 'typesafe/jev-1.13.0', inky: 'opper/kev-4b', clyde: 'openai/gpt-6-luna-decisions' };

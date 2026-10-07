@@ -1,5 +1,5 @@
 import type { Decision } from './brain';
-import { GHOST_NAMES, ghostIcon, type Lineup } from './overlay';
+import { ARCADE_FILL, GHOST_NAMES, ghostIcon, type Lineup } from './overlay';
 import type { SchedulerEvent } from './scheduler';
 import type { GameState, Status } from './sim';
 import type { Dir, GhostId } from './types';
@@ -14,7 +14,7 @@ type Entry =
   | { kind: 'move'; t: number; actor: Decision['actor']; dir: Dir; p: number; alts: [Dir, number][]; ms: number | null }
   | { kind: 'backup'; t: number; actor: Decision['actor']; dir: Dir; reason: string }
   | { kind: 'death'; t: number; ghost: GhostId | null; lives: number }
-  | { kind: 'gain'; t: number; icon: string; text: string; meta: string }
+  | { kind: 'gain'; t: number; k: 'ghost' | 'fruit' | 'level' | 'over'; icon: string; text: string; meta: string }
   | { kind: 'sep'; text: string };
 
 /** Whose moves the log follows: an AI playing Pac-Man, or the AIs playing the ghosts against you. */
@@ -117,15 +117,15 @@ export class ActivityLog {
     for (const pop of state.popups) {
       if (this.seenPopups.has(pop)) continue;
       this.seenPopups.add(pop);
-      this.push(GHOST_POINTS.has(pop.text) ? { kind: 'gain', t, icon: '+', text: 'Ate a ghost', meta: `+${pop.text}` } : { kind: 'gain', t, icon: '+', text: 'Ate the fruit', meta: `+${pop.text}` });
+      this.push(GHOST_POINTS.has(pop.text) ? { kind: 'gain', t, k: 'ghost', icon: '+', text: 'Ate a ghost', meta: `+${pop.text}` } : { kind: 'gain', t, k: 'fruit', icon: '+', text: 'Ate the fruit', meta: `+${pop.text}` });
     }
     if (state.popups.length === 0 && this.seenPopups.size > 50) this.seenPopups.clear();
     if (state.status === this.lastStatus) return;
     this.lastStatus = state.status;
     if (state.status === 'dying') this.push({ kind: 'death', t, ghost: state.caughtBy, lives: state.lives });
-    if (state.status === 'levelclear') this.push({ kind: 'gain', t, icon: '★', text: `Cleared level ${state.level}`, meta: state.score.toLocaleString('en-US') });
+    if (state.status === 'levelclear') this.push({ kind: 'gain', t, k: 'level', icon: '★', text: `Cleared level ${state.level}`, meta: state.score.toLocaleString('en-US') });
     if (state.status === 'gameover') {
-      this.push({ kind: 'gain', t, icon: '■', text: 'Game over', meta: `${state.score.toLocaleString('en-US')} points` });
+      this.push({ kind: 'gain', t, k: 'over', icon: '■', text: 'Game over', meta: `${state.score.toLocaleString('en-US')} points` });
       this.over = true;
       this.renderHead();
     }
@@ -172,12 +172,16 @@ export class ActivityLog {
         meta = e.reason;
       }
     } else if (e.kind === 'death') {
-      if (e.ghost) ic.append(ghostIcon(e.ghost));
+      if (e.ghost) {
+        ic.append(ghostIcon(e.ghost));
+        li.style.setProperty('--gc', ARCADE_FILL[e.ghost]); // the banner in the colour of the ghost that caught Pac-Man
+      }
       const model = e.ghost ? this.subject.lineup?.[e.ghost] : undefined;
       tx.textContent = e.ghost ? `Caught by ${GHOST_NAMES[e.ghost]}${model ? ` (${modelName(model)})` : ''}` : 'Caught';
       // The life is taken when the dying animation ends, so `lives` still counts this one.
       meta = e.lives > 2 ? `${e.lives - 1} lives left` : e.lives === 2 ? '1 life left' : '';
     } else {
+      li.dataset.k = e.k;
       ic.textContent = e.icon;
       tx.textContent = e.text;
       meta = e.meta;

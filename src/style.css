@@ -127,8 +127,10 @@ main { display: block; padding-bottom: 96px; }
  */
 .tv {
   --game: 460px; --log: 340px; --drawer-h: 420px;
-  position: relative; width: calc(var(--game) + 22px); max-width: 100%;
-  border: 1px solid var(--j-line); border-radius: 18px; padding: 10px; background: var(--j-card); box-shadow: 0 22px 46px -30px rgba(27, 46, 64, 0.5);
+  position: relative; width: calc(var(--game) + 24px); max-width: 100%;
+  /* The arcade cabinet: black inside the maze's double blue wall, like the picker; the same in both themes. */
+  border: 2px solid var(--j-maze); border-radius: 10px; padding: 10px; background: #000; color: #fff;
+  box-shadow: inset 0 0 0 3px #000, inset 0 0 0 5px var(--j-maze), 0 22px 46px -26px rgba(0, 0, 0, 0.7);
 }
 /* The game column never grows past the card: a long label or a big score can't widen the board. */
 .tv-game { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
@@ -137,9 +139,11 @@ main { display: block; padding-bottom: 96px; }
 .arcade-top .cell { display: grid; gap: 2px; min-width: 0; }
 .arcade-top .mid { justify-items: center; text-align: center; cursor: help; }
 .arcade-top .end { justify-items: end; text-align: right; }
-.arcade-top small { max-width: 100%; font: 600 10px/1.2 var(--j-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--j-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.arcade-top b { max-width: 100%; font: 700 18px/1.15 var(--j-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.arcade-top .end b { font-size: 14px; line-height: 21px; text-transform: uppercase; }
+.arcade-top small { max-width: 100%; font: 8px/1.4 var(--j-pixel); letter-spacing: 0.04em; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arcade-top .cell:first-child small { color: #ff3b3b; } /* the player, red like 1UP */
+.arcade-top .end small { color: #8f97ff; }
+.arcade-top b { max-width: 100%; font: 13px/1.5 var(--j-pixel); letter-spacing: 0.02em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arcade-top .end b { font-size: 10px; line-height: 19.5px; text-transform: uppercase; }
 /* The bottom strip: the lives on the left, a fruit per level on the right, Play between them. */
 .arcade-bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 44px; padding: 0 4px; }
 .arcade-bottom .lives { grid-column: 1; display: inline-flex; gap: 5px; }
@@ -159,7 +163,8 @@ main { display: block; padding-bottom: 96px; }
 /* The drawer: its own card, as tall as the game card, beside it. */
 .side-log {
   position: absolute; top: 0; bottom: 0; left: calc(100% + 14px); width: var(--log); display: flex; flex-direction: column; overflow: hidden;
-  border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-card); box-shadow: 0 22px 46px -30px rgba(27, 46, 64, 0.5);
+  border: 2px solid var(--j-maze); border-radius: 10px; background: #000; color: #e9ecf1;
+  box-shadow: inset 0 0 0 3px #000, inset 0 0 0 5px var(--j-maze), 0 22px 46px -30px rgba(0, 0, 0, 0.8);
   opacity: 0; transform: translateX(-24px); visibility: hidden; pointer-events: none;
   transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 260ms;
 }
@@ -173,17 +178,44 @@ main { display: block; padding-bottom: 96px; }
 .drawer-tab:hover { background: #0b0b2a; }
 .drawer-tab .tpac { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: rotate(90deg); background: conic-gradient(var(--j-arc-yellow) 0 60deg, transparent 0 120deg, var(--j-arc-yellow) 0); }
 .tv.log-open .drawer-tab { opacity: 0; pointer-events: none; }
-.lg-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px 14px; }
-.lg-title { margin: 0; font: 700 15px var(--j-display); white-space: nowrap; }
+.lg-head { display: flex; align-items: center; gap: 10px; padding: 14px 12px 8px 16px; }
+.lg-title { margin: 0; font: 9px/1 var(--j-pixel); color: var(--j-arc-yellow); text-transform: uppercase; white-space: nowrap; }
+.side-log .seg { background: none; padding: 0; gap: 6px; flex-wrap: nowrap; }
+.side-log .seg button { padding: 3px 2px; border-radius: 0; background: none; box-shadow: none; font: 7px/1.4 var(--j-pixel); color: var(--j-arc-dim); text-transform: uppercase; white-space: nowrap; }
+.side-log .seg button[aria-pressed='true'] { background: none; box-shadow: none; color: #fff; }
+.side-log .seg button[aria-pressed='true']::before { content: '>'; margin-right: 4px; color: var(--j-arc-yellow); }
+.side-log .close { border: 0; background: none; color: var(--j-arc-dim); font: 11px/1 var(--j-pixel); }
+.side-log .close:hover { background: none; color: var(--j-arc-yellow); }
 .close { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--j-line); border-radius: 8px; background: var(--j-card); color: var(--j-muted); display: grid; place-items: center; font-size: 16px; line-height: 1; }
 .close:hover { color: var(--j-text); background: var(--j-soft); }
 .lg-head .close { margin-left: auto; }
-.lg-totals { padding: 0 14px 10px; border-bottom: 1px solid var(--j-hair); }
+.lg-totals { padding: 0 16px 10px; border-bottom: 2px solid var(--j-maze); }
 .lg-totals .hud { padding: 0; }
+.lg-totals .hud small { font: 7.5px/1.5 var(--j-pixel); letter-spacing: 0; color: #8f97ff; }
+.lg-totals .hud b { font: 600 14px/1.4 var(--j-mono); color: #fff; }
 .lg-list { position: relative; flex: 1 1 auto; min-height: 0; }
 .lg-list > .in { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
-.lg-list .log { flex: 1 1 auto; min-height: 0; padding: 6px; scrollbar-width: thin; }
-.lg-foot { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--j-hair); font-size: 12px; line-height: 1.4; color: var(--j-muted); }
+.lg-list .log { flex: 1 1 auto; min-height: 0; padding: 8px; scrollbar-width: thin; scrollbar-color: #2b2f3a #000; }
+.lg-foot { margin: 0; padding: 8px 16px 10px; border-top: 2px solid var(--j-maze); font: 500 11px/1.4 var(--j-mono); color: #5f6b78; }
+/* The rows in the drawer: mono, odds in arcade yellow, key moments as banners in the colour of what happened. */
+.side-log .ev { font: 500 13px/1.35 var(--j-mono); grid-template-columns: 3.1em 16px minmax(0, 1fr) auto; gap: 8px; padding: 6px; border-radius: 4px; }
+.side-log .ev .tm, .side-log .ev .mt { color: #5f6b78; }
+.side-log .ev .ic { width: 16px; height: 16px; background: none; color: var(--j-arc-yellow); font-size: 14px; }
+.side-log .ev .tx b, .side-log .ev .p { color: var(--j-arc-yellow); font-weight: 700; }
+.side-log .ev .alt, .side-log .ev .who { color: var(--j-arc-dim); font-size: 12px; }
+.side-log .ev.backup .ic, .side-log .ev.backup .tx { background: none; color: #ffb852; }
+.side-log .ev.key { --bc: #fff; grid-template-columns: 3.1em minmax(0, 1fr) auto; margin-block: 3px; padding-block: 7px; border-block: 1px solid var(--bc); border-radius: 0; background: none; color: var(--bc); }
+.side-log .ev.key .ic { display: none; }
+.side-log .ev.key .tx { text-align: center; font: 700 12.5px/1.35 var(--j-mono); letter-spacing: 0.04em; color: var(--bc); }
+.side-log .ev.key .mt { color: var(--bc); opacity: 0.8; }
+.side-log .ev.death { --bc: var(--gc, #ff5a5a); }
+.side-log .ev.gain[data-k='ghost'] { --bc: #00ffff; }
+.side-log .ev.gain[data-k='fruit'] { --bc: #ff7aa8; }
+.side-log .ev.gain[data-k='level'] { --bc: var(--j-arc-yellow); }
+.side-log .ev.gain[data-k='over'] { --bc: #ff3b3b; }
+.side-log .ev.sep { color: #8f97ff; font: 500 12px/1.4 var(--j-mono); padding: 6px 4px; }
+.side-log .ev.new { animation: ev-in-arc 420ms ease-out; }
+@keyframes ev-in-arc { from { background: rgba(255, 216, 0, 0.18); } }
 /* Too narrow for the drawer beside the card: the tab hangs from the card's bottom edge, and the drawer opens below. */
 @media (max-width: 1239px) {
   .tv { margin-bottom: 30px; transition: margin-bottom 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -193,7 +225,7 @@ main { display: block; padding-bottom: 96px; }
   .side-log { top: calc(100% + 14px); bottom: auto; left: 0; right: 0; width: auto; height: var(--drawer-h); transform: translateY(-16px); }
   .tv.log-open .side-log { transform: none; }
 }
-.board { position: relative; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
+.board { position: relative; background: #000; border-radius: 2px; overflow: hidden; line-height: 0; }
 .board canvas { display: block; width: 100%; height: auto; }
 .board.dim canvas { filter: brightness(0.35) saturate(0.6); }
 .board.steering canvas { touch-action: none; }
@@ -377,6 +409,8 @@ kbd { font: 500 11px var(--j-mono); border: 1px solid var(--j-line); border-bott
 }
 @media (max-width: 520px) {
   .user-menu .name { display: none; }
+  .arcade-top b { font-size: 11px; }
+  .arcade-top .end b { font-size: 8.5px; line-height: 16.5px; }
   .lineup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ev .alt { display: none; }
   .play-cta { padding: 12px 13px; font-size: 9.5px; gap: 8px; }
