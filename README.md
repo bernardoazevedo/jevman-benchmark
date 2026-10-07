@@ -1,19 +1,20 @@
 # jevman
 
-Pac-Man where the characters are driven by System One decision models: TypeSafe's jev
-(`typesafe/jev-1.13.0`, the default) and the others Opper serves, called through Opper or (jev only)
-straight from TypeSafe. The main thing is to **watch an AI play**: press Play, pick a model with one click
-(jev by default) and watch it play Pac-Man against the classic arcade ghosts. Below that are more ways to play:
-**Beat the AI** (free, no sign-in: you against the classic ghosts, the same game the models played for the
-leaderboard; game over tells you which AIs you beat, with a Share button and your personal best), **Play against AI
-ghosts** (you steer, a model plays the ghosts) and **AI vs AI** (models on both sides). `J` hands Pac-Man to the AI
-or takes him back during a game.
-`npm run leaderboard` measures which model plays best, and you can [add your own](#benchmark-your-own-model). While a model plays, its odds are drawn on the
-board at each junction.
+A Pac-Man benchmark for decision models: System One models (TypeSafe's jev, `typesafe/jev-1.13.0`, and the others
+Opper serves) steer Pac-Man in real time against the classic arcade ghosts, and `npm run leaderboard` measures which
+plays best. You can [add your own](#benchmark-your-own-model).
 
-The side panel shows each decision with its probabilities, confidence, latency, the model that made
-it and the running cost. Red entries were not the model's own choice: greedy fallbacks used when it
-could not answer (timeout, error or invalid answer; see
+The page opens on jev's recorded benchmark game, with the leaderboard and the method below it. Two things to do:
+
+- **Play against the AIs**: you steer Pac-Man and AI models play the four ghosts, one model each (Mixed: Clef, jev,
+  Kev and GPT-6 Luna) or all the same one; tap a ghost to switch its model. A model that doesn't wake up in time is
+  stood in for by an awake one, so the game still starts. Signed out, this runs on the [free credits](#option-d--free-credits-for-everyone-the-hosted-page)
+  while they last; when they are used up, the classic ghosts stay free.
+- **Watch**: the chips under the board play jev's recording, or any other model live.
+
+While a model plays, its odds are drawn on the board at each junction. The activity log under the board (folded by
+default) lists every decision with its odds, the other options and the latency, plus deaths, ghosts eaten and fruit;
+backup moves are the greedy rule standing in when a model could not answer in time (see
 [How decisions work](#how-decisions-work)).
 
 Play it at <https://opper.ai/jevman-benchmark/>. Source: <https://github.com/opper-ai/jevman-benchmark>, which

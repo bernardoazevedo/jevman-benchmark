@@ -3,74 +3,136 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="data:," />
-    <title>jevman · Can you beat the AI at Pac-Man?</title>
-    <meta name="description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <link rel="icon" href="https://opper.ai/favicon.ico" />
+    <link rel="preload" href="%BASE_URL%fonts/wix-madefor-display-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="%BASE_URL%fonts/wix-madefor-text-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <title>jevman: a Pac-Man benchmark for decision models · Opper</title>
+    <meta name="description" content="Six AI decision models played Pac-Man in real time against the classic arcade ghosts. See the leaderboard, watch their games, or play against them." />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="jevman" />
-    <meta property="og:title" content="Can you beat the AI at Pac-Man?" />
-    <meta property="og:description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <meta property="og:site_name" content="Opper" />
+    <meta property="og:title" content="jevman: a Pac-Man benchmark for decision models" />
+    <meta property="og:description" content="Six AI decision models played Pac-Man in real time against the classic arcade ghosts. See the leaderboard, watch their games, or play against them." />
     <meta property="og:url" content="%VITE_APP_URL%" />
     <meta property="og:image" content="%VITE_APP_URL%og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Can you beat the AI at Pac-Man?" />
-    <meta name="twitter:description" content="Watch six AI decision models play Pac-Man, steer Pac-Man yourself, and see where you rank." />
+    <meta name="twitter:title" content="jevman: a Pac-Man benchmark for decision models" />
+    <meta name="twitter:description" content="Six AI decision models played Pac-Man in real time against the classic arcade ghosts. See the leaderboard, watch their games, or play against them." />
     <meta name="twitter:image" content="%VITE_APP_URL%og.png" />
+    <link rel="canonical" href="%VITE_APP_URL%" />
   </head>
   <body>
-    <header class="appbar">
-      <div class="appbar-inner">
-        <a class="brand" href="%BASE_URL%">
-          <span class="logo" aria-hidden="true"></span>
-          <div>
-            <h1>jevman</h1>
-            <p>Watch AI play Pac-Man, or try to beat it</p>
-          </div>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <defs><linearGradient id="opper-gradient" x1="40.9%" y1="18%" x2="55.3%" y2="86.6%"><stop stop-color="#8CECF2" offset="0%" /><stop stop-color="#F9B58C" offset="100%" /></linearGradient></defs>
+    </svg>
+    <header class="nav">
+      <div class="nav-in">
+        <a class="nav-logo" href="https://opper.ai/" aria-label="Opper">
+          <svg viewBox="0 0 800 266" aria-hidden="true"><path d="M659.479,166.228003 C668.16,166.657003 676.158,163.784003 682.347,158.770003 L682.331,158.754003 L710.895,158.754003 C701.358,176.797003 682.315,189.032003 660.431,188.778003 C630.534,188.429003 605.858,164.308003 604.858,134.427003 C603.795,102.514003 629.312,76.2827026 660.971,76.2031116 C691.455,76.1240026 716.735,100.737003 717.401,131.221003 C717.496,135.522003 717.116,139.711003 716.29,143.742003 L702.421,143.742003 L702.421,143.774003 L629.313,143.774003 C633.809,156.316003 645.564,165.565003 659.479,166.228003 Z M627.361,133.107003 L627.361,131.863003 C627.354,132.267003 627.353,132.671003 627.36,133.078003 C627.361,133.088003 627.361,133.098003 627.361,133.107003 Z M629.267,121.256003 C634.056,107.668003 647.292,98.0667026 662.669,98.7532026 C676.592,99.3743026 688.469,108.616003 692.972,121.256003 L629.267,121.256003 Z M747.458,98.7224026 L747.458,76.2042026 L800,76.2042026 C800,88.6297026 789.907,98.7224026 777.482,98.7224026 L747.458,98.7224026 Z M300.871,76.2199026 C269.784,76.2199026 244.584,101.420003 244.584,132.507003 C244.584,163.595003 269.784,188.795003 300.871,188.795003 C331.959,188.795003 357.159,163.595003 357.159,132.507003 C357.159,101.420003 331.959,76.2199026 300.871,76.2199026 Z M300.871,166.277003 C282.225,166.277003 267.102,151.153003 267.102,132.507003 C267.102,113.861003 282.225,98.7381026 300.871,98.7381026 C319.518,98.7381026 334.641,113.861003 334.641,132.507003 C334.641,151.153003 319.518,166.277003 300.871,166.277003 Z M364.804,136.267003 L364.664,136.267003 L364.664,203.821003 L387.183,203.821003 L387.183,177.533003 C396.592,184.604003 408.29,188.795003 420.967,188.795003 C452.055,188.795003 477.255,163.595003 477.255,132.507003 C477.255,101.420003 452.055,76.2200026 420.967,76.2200026 C389.88,76.2200026 364.68,101.420003 364.68,132.507003 C364.68,133.771003 364.722,135.024003 364.804,136.267003 Z M387.198,132.507003 C387.198,151.154003 402.321,166.277003 420.967,166.277003 C439.613,166.277003 454.737,151.154003 454.737,132.507003 C454.737,113.861003 439.613,98.7382026 420.967,98.7382026 C402.321,98.7382026 387.198,113.861003 387.198,132.507003 Z M484.87,136.269003 L484.761,136.269003 L484.761,203.824003 L507.279,203.824003 L507.279,177.485003 C516.247,184.247003 527.273,188.400003 539.192,188.779003 C571.739,189.811003 598.336,163.214003 597.304,130.667003 C596.368,101.198003 572.358,77.1882026 542.889,76.2519026 C510.342,75.2204026 483.745,101.817003 484.777,134.364003 C484.797,135.002003 484.828,135.637003 484.87,136.269003 Z M507.311,130.746003 C506.295,150.805003 522.767,167.261003 542.81,166.245003 L542.794,166.229003 C559.964,165.356003 573.897,151.408003 574.77,134.253003 C575.786,114.211003 559.33,97.7544026 539.287,98.7700026 C522.133,99.6428026 508.184,113.592003 507.311,130.746003 Z M724.939,98.7381026 L724.939,188.811003 L747.457,188.811003 L747.457,76.2199026 C735.016,76.2199026 724.939,86.2968026 724.939,98.7381026 Z" fill="currentColor" /><path d="M132.739,265.483003 C59.4254,265.483003 0,206.058003 0,132.744003 L0,132.744003 C0,-15.9728974 132.739,0.545778643 132.739,0.545778643 C132.739,73.5089026 73.4042,132.654003 0.167464,132.744003 C124.45,132.863003 132.739,265.483003 132.739,265.483003 Z M133.354,183.714003 C133.354,183.714003 130.379,136.236003 87.2636,132.757003 C100.193,132.610003 133.354,127.718003 133.354,81.3823026 C133.354,127.718003 166.514,132.610003 179.443,132.757003 C136.328,136.223003 133.354,183.714003 133.354,183.714003 Z" fill="url(#opper-gradient)" /></svg>
         </a>
-        <nav class="tabs" aria-label="Site">
-          <a href="%BASE_URL%" aria-current="page">Play</a>
-          <a href="%BASE_URL%leaderboard">Leaderboard</a>
+        <nav class="nav-links" aria-label="Opper">
+          <a href="https://opper.ai/models">Models</a>
+          <a href="https://opper.ai/llm-leaderboard">Rankings</a>
+          <a href="https://opper.ai/apps">Apps</a>
+          <div class="dd">
+            <button type="button" class="dd-btn current" aria-haspopup="true">Roundtable <span class="caret" aria-hidden="true"></span></button>
+            <div class="dd-menu">
+              <a href="https://opper.ai/ai-roundtable/chat"><b>Chat</b><span>Talk to any model in one chat</span></a>
+              <a href="https://opper.ai/ai-roundtable"><b>Roundtable</b><span>Put one question to many models</span></a>
+              <a href="https://opper.ai/ai-roundtable/history"><b>Past Roundtables</b><span>Browse every public roundtable</span></a>
+              <a href="https://opper.ai/ai-roundtable/stats"><b>Roundtable Stats</b><span>Model win rates and agreement</span></a>
+              <a href="%BASE_URL%" aria-current="page"><b>jevman</b><span>A Pac-Man benchmark for decision models</span></a>
+            </div>
+          </div>
+          <div class="dd">
+            <button type="button" class="dd-btn" aria-haspopup="true">Features <span class="caret" aria-hidden="true"></span></button>
+            <div class="dd-menu">
+              <a href="https://opper.ai/ai-control-plane"><b>AI Control Plane</b><span>Spend limits, data retention, model access</span></a>
+              <a href="https://opper.ai/llm-gateway"><b>LLM Gateway</b><span>700+ models through a single API</span></a>
+              <a href="https://opper.ai/llm-router"><b>LLM Router</b><span>Route each request to the right model</span></a>
+              <a href="https://opper.ai/ai-agent-sdk"><b>Agent SDK</b><span>Build autonomous agents</span></a>
+              <a href="https://opper.ai/agent-cli"><b>Agent CLI</b><span>Launch any agent on one key</span></a>
+              <a href="https://opper.ai/ai-wallet"><b>Opper Account</b><span>Pay as you go for AI apps</span></a>
+            </div>
+          </div>
+          <a href="https://opper.ai/enterprise">Enterprise</a>
+          <a href="https://opper.ai/pricing">Pricing</a>
+          <a href="https://docs.opper.ai/">Docs</a>
         </nav>
-        <div class="appbar-end">
-          <a class="gh" href="https://github.com/opper-ai/jevman-benchmark" target="_blank" rel="noopener">GitHub ↗</a>
-          <div id="account" class="account" aria-live="polite"></div>
-        </div>
+        <div id="account" class="account" aria-live="polite"></div>
       </div>
     </header>
-    <div class="page">
-    <main class="layout">
-      <section class="game">
-        <header class="hud">
-          <span>Score <b id="score">0</b></span>
-          <span>Level <b id="level">1</b></span>
-          <span>Lives <b id="lives">3</b></span>
-          <span>Fruit <b id="fruit-hud"></b></span>
-        </header>
-        <div class="board">
-          <canvas id="game" aria-label="Pac-Man game board"></canvas>
-          <div id="overlay" class="overlay" role="dialog" aria-modal="false" hidden></div>
-          <button id="play-cta" class="play-cta" type="button" hidden>▶ Play</button>
-        </div>
-        <div class="dpad" id="dpad" hidden aria-label="Steer Pac-Man">
-          <button type="button" data-dir="up" aria-label="Up">▲</button>
-          <button type="button" data-dir="left" aria-label="Left">◀</button>
-          <button type="button" data-dir="down" aria-label="Down">▼</button>
-          <button type="button" data-dir="right" aria-label="Right">▶</button>
-        </div>
-        <div class="controls">
-          <button id="toggle-pacman" aria-pressed="true">Pac-Man: AI</button>
-          <label>Speed <input id="speed" type="range" min="0.25" max="1" step="0.05" value="1" /> <output id="speed-out">1.00×</output></label>
-          <button id="pause">Pause</button>
-          <button id="restart">Restart</button>
-          <button id="mute" aria-pressed="false" aria-label="Sound">🔊</button>
-        </div>
-        <p class="help">Arrows/WASD or swipe steer when you play Pac-Man · J: Pac-Man to the AI or back · P pause · R restart</p>
+
+    <main>
+      <section class="hero">
+        <h1>jevman: a Pac-Man benchmark for decision models</h1>
+        <p>Six AI decision models played Pac-Man in real time against the classic arcade ghosts, 24 games each. Watch their games and see the leaderboard below, or play against them yourself.</p>
       </section>
-      <aside id="panel" aria-label="Decisions"></aside>
+
+      <section class="stage" aria-label="The game">
+        <div class="tv">
+          <div class="board">
+            <canvas id="game" aria-label="Pac-Man game board"></canvas>
+            <div id="overlay" class="overlay" hidden></div>
+            <button id="play-cta" class="play-cta" type="button" hidden>▶ Play against the AIs</button>
+          </div>
+          <div class="plate">
+            <span class="pac" aria-hidden="true"></span>
+            <span id="plate-tag" class="tag" hidden>Benchmark game</span>
+            <span id="plate-label" class="plate-label"></span>
+            <span class="plate-end">
+              <b id="score" class="score">0</b>
+              <span id="lives" class="lives" aria-label="Lives"></span>
+              <button id="pause" class="icon" type="button" aria-label="Pause">II</button>
+              <button id="mute" class="icon" type="button" aria-pressed="false" aria-label="Sound">🔊</button>
+            </span>
+          </div>
+          <p id="notice" class="notice" role="status" hidden></p>
+          <div class="dpad" id="dpad" hidden aria-label="Steer Pac-Man">
+            <button type="button" data-dir="up" aria-label="Up">▲</button>
+            <button type="button" data-dir="left" aria-label="Left">◀</button>
+            <button type="button" data-dir="down" aria-label="Down">▼</button>
+            <button type="button" data-dir="right" aria-label="Right">▶</button>
+          </div>
+        </div>
+        <div class="watch">
+          <span class="watch-label">Watch</span>
+          <div id="watch-chips" class="chips" role="radiogroup" aria-label="Which AI plays Pac-Man"></div>
+        </div>
+        <div id="activity" class="logbar"></div>
+      </section>
+
+      <section id="leaderboard" class="section" aria-labelledby="leaderboard-title">
+        <h2 id="leaderboard-title">Leaderboard</h2>
+        <p id="leaderboard-sub" class="sub">24 games per model against the classic ghosts.</p>
+        <div class="tablecard"><div class="table-scroll"><table class="lbt" id="leaderboard-table"></table></div></div>
+        <p class="foot">=1 means tied: those scores are within each other's margin of error.</p>
+      </section>
+
+      <section id="method" class="section" aria-labelledby="method-title">
+        <h2 id="method-title">Method</h2>
+        <div class="method">
+          <ul>
+            <li>Each model plays Pac-Man against the classic scripted ghosts until it loses three lives or 5 minutes pass. 24 games per model.</li>
+            <li>At every junction the game asks the model one question, with the maze, pellets and ghosts as state. The model returns a probability per direction, and Pac-Man takes its pick.</li>
+            <li>An answer that takes longer than 2 seconds is replaced by a simple backup rule, counted under backup moves.</li>
+            <li>Scores are means with a 95% margin of error (±2 standard errors). Models within each other's margin are tied.</li>
+            <li>Every game is recorded and replays exactly, so any result can be checked.</li>
+          </ul>
+          <div class="addcard">
+            <h3>Add your decision model</h3>
+            <p>Run the benchmark on your own model and send a pull request. CI replays every game you submit, and your model joins the leaderboard.</p>
+            <a class="btn-dark" href="https://github.com/opper-ai/jevman-benchmark/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Open on GitHub ↗</a>
+          </div>
+        </div>
+      </section>
     </main>
-    </div>
+
+    <footer class="footer">
+      <span>jevman is open source: <a href="https://github.com/opper-ai/jevman-benchmark" target="_blank" rel="noopener">github.com/opper-ai/jevman-benchmark</a></span>
+      <span>Decision models served by <a href="https://opper.ai/">Opper</a></span>
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

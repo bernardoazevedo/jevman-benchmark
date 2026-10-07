@@ -148,65 +148,68 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: 
   return e;
 }
 
-function signInButton(me: Me): HTMLButtonElement {
-  const b = el('button', 'Sign in with Opper', 'signin');
+/** Login with Opper, as on opper.ai: an outlined pill. */
+function loginButton(me: Me, label = 'Login'): HTMLButtonElement {
+  const b = el('button', label, 'pill');
+  b.type = 'button';
   b.disabled = !me.loginAvailable;
-  b.title = me.loginAvailable ? 'To watch the AI play live or face AI ghosts; calls bill your own Opper wallet' : 'Login with Opper is not configured on this server';
+  b.title = me.loginAvailable ? 'Play on your own Opper account' : 'Login with Opper is not configured on this server';
   b.addEventListener('click', signIn);
   return b;
 }
 
+/** Sign up goes where opper.ai's does: an Opper account. */
+function signUpLink(): HTMLAnchorElement {
+  const a = el('a', 'Sign up', 'pill dark');
+  a.href = 'https://opper.ai/sign-up/free';
+  return a;
+}
+
 /**
- * The account area of the page header, kept short: who is signed in (or that a local key plays) and the one action
- * that matters, signing in. What signing in costs is explained in the Play dialog.
+ * The account area of the opper.ai nav, as on AI Roundtable. Signed out: the free credits' balance (the amount only,
+ * explained on hover), Login and Sign up. Signed in: an initial, the name and a menu with the wallet and signing out.
  */
 export function renderAccount(root: HTMLElement, view: AccountView): void {
   const { me } = view;
   const text = el('div', undefined, 'account-text');
   const actions = el('div', undefined, 'account-actions');
-  // With a notice, "Try again" takes the place of the view's own sign-in button.
-  const retry = Boolean(view.notice) && view.kind !== 'player';
   if (view.kind === 'player') {
-    // As on AI Roundtable: an initial, the name, and a menu with the wallet and signing out.
     const who = me.user?.name ?? me.user?.email ?? 'Opper user';
     const menu = el('details', undefined, 'user-menu');
     const summary = el('summary');
-    summary.title = `${me.projectName ? `Project ${me.projectName}. ` : ''}You play on your own Opper account.`;
+    summary.setAttribute('aria-label', 'Account menu');
     summary.append(el('span', who.trim().charAt(0).toUpperCase() || '?', 'avatar'), el('span', who, 'name'), el('span', '', 'chevron'));
     const list = el('div', undefined, 'menu');
-    const wallet = el('a', 'Wallet ↗');
+    const whoBox = el('div', 'Logged in as', 'who');
+    whoBox.append(el('b', me.user?.email ?? who));
+    const wallet = el('a', 'Opper Wallet ↗');
     wallet.href = me.walletUrl;
     wallet.target = '_blank';
     wallet.rel = 'noopener';
     const out = el('button', 'Sign out');
     out.type = 'button';
     out.addEventListener('click', () => void signOut());
-    list.append(wallet, out);
+    list.append(whoBox, wallet, out);
     menu.append(summary, list);
     text.append(menu);
     closeMenusOnOutsideClick();
-  } else if (view.kind === 'pool' || view.kind === 'pool-empty') {
-    // Signed out: the free credits' balance stands where a signed-in player's name goes, explained on hover.
-    const empty = view.kind === 'pool-empty';
-    const amount = empty ? '$0.00' : (poolAmount(me.pool?.remainingUsd ?? null) ?? 'Free');
-    const credits = el('span', amount, empty ? 'credits empty' : 'credits');
-    credits.tabIndex = 0;
-    credits.dataset.tip = empty ? POOL_EMPTY_NOTICE : 'Free credits: a shared pool for everyone to try';
-    credits.setAttribute('aria-label', `${amount} free credits. ${credits.dataset.tip}`);
-    // The amount ticks down while people play; that is not news for a screen reader.
-    credits.setAttribute('aria-live', 'off');
-    text.append(credits);
-    if (!retry || empty) actions.append(signInButton(me));
-  } else if (view.kind === 'dev') {
-    const p = el('p', undefined, 'status');
-    p.append(el('span', 'Local key', 'badge'));
-    p.title = me.devProvider === 'typesafe' ? 'Playing with your TypeSafe key from .env: calls go straight to TypeSafe.' : 'Playing with the local dev key from .env: calls go through Opper with your key.';
-    text.append(p);
-    if (me.loginAvailable && !retry) actions.append(signInButton(me));
   } else {
-    // Demo, the free game, or signed out: one quiet sign-in (Play is the page's main action).
-    if (view.kind === 'signed-out') text.append(el('p', 'Signed out', 'status'));
-    if (!retry) actions.append(signInButton(me));
+    if (view.kind === 'pool' || view.kind === 'pool-empty') {
+      const empty = view.kind === 'pool-empty';
+      const amount = empty ? '$0.00' : (poolAmount(me.pool?.remainingUsd ?? null) ?? 'Free');
+      const credits = el('span', amount, empty ? 'credits empty' : 'credits');
+      credits.tabIndex = 0;
+      credits.dataset.tip = empty ? POOL_EMPTY_NOTICE : 'Free credits: a shared pool for everyone to try';
+      credits.setAttribute('aria-label', `${amount} free credits. ${credits.dataset.tip}`);
+      // The amount ticks down while people play; that is not news for a screen reader.
+      credits.setAttribute('aria-live', 'off');
+      text.append(credits);
+    } else if (view.kind === 'dev') {
+      const badge = el('span', 'Local key', 'badge');
+      badge.title = me.devProvider === 'typesafe' ? 'Playing with your TypeSafe key from .env: calls go straight to TypeSafe.' : 'Playing with the local dev key from .env: calls go through Opper with your key.';
+      text.append(badge);
+    }
+    actions.append(loginButton(me, view.notice && view.kind !== 'pool-empty' ? 'Try again' : 'Login'), signUpLink());
   }
   if (view.notice) {
     // No role="alert": the account area itself is an aria-live="polite" region.
@@ -219,11 +222,6 @@ export function renderAccount(root: HTMLElement, view: AccountView): void {
       notice.append(link);
     } else notice.textContent = view.notice;
     text.append(notice);
-    if (retry) {
-      const again = signInButton(me);
-      again.textContent = 'Try again';
-      actions.prepend(again);
-    }
   }
   root.dataset.kind = view.kind;
   root.replaceChildren(text, ...(actions.childElementCount ? [actions] : []));

@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="https://opper.ai/favicon.ico" />
     <title>Which AI plays Pac-Man best? · jevman</title>
     <meta name="description" content="Six AI decision models each played 24 real-time games of Pac-Man against the classic ghosts. Here is how they rank." />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="jevman" />
+    <meta property="og:site_name" content="Opper" />
     <meta property="og:title" content="Which AI plays Pac-Man best?" />
     <meta property="og:description" content="Six AI decision models each played 24 real-time games of Pac-Man against the classic ghosts. Here is how they rank." />
     <meta property="og:url" content="%VITE_APP_URL%leaderboard" />
@@ -18,44 +18,11 @@
     <meta name="twitter:title" content="Which AI plays Pac-Man best?" />
     <meta name="twitter:description" content="Six AI decision models each played 24 real-time games of Pac-Man against the classic ghosts. Here is how they rank." />
     <meta name="twitter:image" content="%VITE_APP_URL%og-leaderboard.png" />
+    <!-- The leaderboard lives on the main page now; this page keeps its share card for links already out there. -->
+    <link rel="canonical" href="%VITE_APP_URL%" />
+    <meta http-equiv="refresh" content="0; url=%BASE_URL%#leaderboard" />
   </head>
   <body>
-    <header class="appbar">
-      <div class="appbar-inner">
-        <a class="brand" href="%BASE_URL%">
-          <span class="logo" aria-hidden="true"></span>
-          <div>
-            <h1>jevman</h1>
-            <p>Watch AI play Pac-Man, or try to beat it</p>
-          </div>
-        </a>
-        <nav class="tabs" aria-label="Site">
-          <a href="%BASE_URL%">Play</a>
-          <a href="%BASE_URL%leaderboard" aria-current="page">Leaderboard</a>
-        </nav>
-        <div class="appbar-end">
-          <a class="gh" href="https://github.com/opper-ai/jevman-benchmark" target="_blank" rel="noopener">GitHub ↗</a>
-        </div>
-      </div>
-    </header>
-    <div class="page lb-page">
-      <main class="lb">
-        <h2 class="lb-title">Which AI plays Pac-Man best?</h2>
-        <p class="lb-verdict" id="verdict"></p>
-        <p class="lb-lede" id="lede">Loading the results…</p>
-        <ol class="lb-list" id="list"></ol>
-        <section class="lb-community" aria-labelledby="community-title">
-          <h3 id="community-title">Self-reported</h3>
-          <p class="lb-note" id="community-note"></p>
-          <ol class="lb-list" id="community-list"></ol>
-        </section>
-        <section class="lb-method" aria-labelledby="method-title">
-          <h3 id="method-title">How we measured</h3>
-          <ul id="method"></ul>
-        </section>
-      </main>
-      <p class="source"><a href="https://github.com/opper-ai/jevman-benchmark" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
-    </div>
-    <script type="module" src="/src/leaderboard-page.ts"></script>
+    <p><a href="%BASE_URL%#leaderboard">The leaderboard is on the main page.</a></p>
   </body>
 </html>

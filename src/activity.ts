@@ -1,0 +1,255 @@
+import type { Decision } from './brain';
+import { GHOST_NAMES, ghostIcon, type Lineup } from './overlay';
+import type { SchedulerEvent } from './scheduler';
+import type { GameState, Status } from './sim';
+import type { Dir, GhostId } from './types';
+import { modelName } from '../shared/models';
+
+const ARROW: Record<Dir, string> = { up: '↑', left: '←', down: '↓', right: '→' };
+const DIR_NAME: Record<Dir, string> = { up: 'Up', left: 'Left', down: 'Down', right: 'Right' };
+const GHOST_POINTS = new Set(['200', '400', '800', '1600']);
+const MAX_ENTRIES = 120;
+
+type Entry =
+  | { kind: 'move'; t: number; actor: Decision['actor']; dir: Dir; p: number; alts: [Dir, number][]; ms: number | null }
+  | { kind: 'backup'; t: number; actor: Decision['actor']; dir: Dir; reason: string }
+  | { kind: 'death'; t: number; ghost: GhostId | null; lives: number }
+  | { kind: 'gain'; t: number; icon: string; text: string; meta: string }
+  | { kind: 'sep'; text: string };
+
+/** Whose moves the log follows: an AI playing Pac-Man, or the AIs playing the ghosts against you. */
+export interface Subject {
+  /** pacman: an AI plays Pac-Man; ghosts: AIs play the ghosts against you; classic: you against the classic ghosts. */
+  kind: 'pacman' | 'ghosts' | 'classic';
+  /** The model playing Pac-Man, or the ghosts' models. */
+  model?: string;
+  lineup?: Lineup;
+  recorded?: boolean;
+}
+
+const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+/**
+ * The activity log: every decision the AI makes, with its odds, and the moments that matter (deaths, ghosts eaten,
+ * fruit). Folded under the board by default: while playing, the arrows on the board are enough; it is the detail to
+ * review afterwards.
+ */
+export class ActivityLog {
+  private entries: Entry[] = [];
+  private open = false;
+  private filter: 'all' | 'key' = 'all';
+  private subject: Subject = { kind: 'pacman' };
+  private over = false;
+  private totals = { moves: 0, backup: 0, calls: 0, latency: 0, cost: 0, dropped: 0 };
+  private lastStatus: Status | null = null;
+  private seenPopups = new Set<object>();
+  private list: HTMLOListElement | null = null;
+  private totalsEl: HTMLElement | null = null;
+  private toggleSub: HTMLElement | null = null;
+
+  constructor(private readonly root: HTMLElement) {
+    this.render();
+  }
+
+  /** A new game (or a new loop of the recording): starts the log over. */
+  begin(subject: Subject): void {
+    this.subject = subject;
+    this.entries = [{ kind: 'sep', text: subject.recorded ? 'Recorded benchmark game' : 'New game' }];
+    this.totals = { moves: 0, backup: 0, calls: 0, latency: 0, cost: 0, dropped: 0 };
+    this.lastStatus = null;
+    this.seenPopups = new Set();
+    this.over = false;
+    this.render();
+  }
+
+  setOpen(open: boolean): void {
+    if (open === this.open) return;
+    this.open = open;
+    this.render();
+  }
+
+  /** The scheduler's events (or a recording's): calls for the totals, decisions for the list. */
+  handle(e: SchedulerEvent, t: number): void {
+    if (e.type === 'call') {
+      this.totals.calls += 1;
+      if (Number.isFinite(e.latencyMs)) this.totals.latency += e.latencyMs;
+      if (e.costUsd !== null && Number.isFinite(e.costUsd)) this.totals.cost += e.costUsd;
+      return this.renderTotals();
+    }
+    if (e.type === 'stale' || e.type === 'superseded') {
+      this.totals.dropped += 1;
+      return this.renderTotals();
+    }
+    if (e.type !== 'decision') return;
+    const d = e.decision;
+    if (d.source === 'fallback') {
+      this.totals.backup += 1;
+      return this.push({ kind: 'backup', t, actor: d.actor, dir: d.choice, reason: d.reason ?? 'no answer' });
+    }
+    this.totals.moves += 1;
+    const p = d.probabilities[d.choice];
+    const alts = d.options
+      .filter((o) => o !== d.choice)
+      .map((o): [Dir, number] => [o, Math.round((d.probabilities[o] ?? 0) * 100)])
+      .sort((a, b) => b[1] - a[1]);
+    this.push({ kind: 'move', t, actor: d.actor, dir: d.choice, p: p === undefined ? 100 : Math.round(p * 100), alts, ms: e.latencyMs });
+  }
+
+  /** The game's own moments, read off its state each frame: deaths, points from ghosts and fruit, levels, the end. */
+  observe(state: GameState, t: number): void {
+    for (const pop of state.popups) {
+      if (this.seenPopups.has(pop)) continue;
+      this.seenPopups.add(pop);
+      this.push(GHOST_POINTS.has(pop.text) ? { kind: 'gain', t, icon: '+', text: 'Ate a ghost', meta: `+${pop.text}` } : { kind: 'gain', t, icon: '+', text: 'Ate the fruit', meta: `+${pop.text}` });
+    }
+    if (state.popups.length === 0 && this.seenPopups.size > 50) this.seenPopups.clear();
+    if (state.status === this.lastStatus) return;
+    this.lastStatus = state.status;
+    if (state.status === 'dying') this.push({ kind: 'death', t, ghost: state.caughtBy, lives: state.lives });
+    if (state.status === 'levelclear') this.push({ kind: 'gain', t, icon: '★', text: `Cleared level ${state.level}`, meta: state.score.toLocaleString('en-US') });
+    if (state.status === 'gameover') {
+      this.push({ kind: 'gain', t, icon: '■', text: 'Game over', meta: `${state.score.toLocaleString('en-US')} points` });
+      this.over = true;
+      this.renderToggle();
+    }
+  }
+
+  private push(e: Entry): void {
+    this.entries.unshift(e);
+    if (this.entries.length > MAX_ENTRIES) this.entries.length = MAX_ENTRIES;
+    if (this.list && this.visible(e)) {
+      this.list.querySelector('.empty')?.remove();
+      this.list.prepend(this.row(e, true));
+      while (this.list.childElementCount > MAX_ENTRIES) this.list.lastElementChild!.remove();
+    }
+    this.renderTotals();
+  }
+
+  private visible(e: Entry): boolean {
+    return this.filter === 'all' || (e.kind !== 'move' && e.kind !== 'backup');
+  }
+
+  private whoText(actor: Decision['actor']): string {
+    if (actor === 'pacman') return '';
+    const model = this.subject.lineup?.[actor];
+    return `${GHOST_NAMES[actor]}${model ? ` · ${modelName(model).replace(/ 1\.13$/, '')}` : ''}`;
+  }
+
+  private row(e: Entry, fresh = false): HTMLLIElement {
+    if (e.kind === 'sep') return el('li', e.text, 'ev sep');
+    const li = el('li', undefined, `ev ${e.kind}${e.kind === 'move' ? '' : ' key'}${fresh ? ' new' : ''}`);
+    const ic = el('span', undefined, 'ic');
+    const tx = el('span', undefined, 'tx');
+    let meta = '';
+    if (e.kind === 'move' || e.kind === 'backup') {
+      if (e.actor === 'pacman') ic.textContent = ARROW[e.dir];
+      else ic.append(ghostIcon(e.actor));
+      const who = this.whoText(e.actor);
+      if (who) tx.append(el('span', who, 'who'));
+      if (e.kind === 'move') {
+        tx.append(el('b', `${e.actor === 'pacman' ? '' : `${ARROW[e.dir]} `}${DIR_NAME[e.dir]}`), el('span', `${e.p}%`, 'p'));
+        if (e.alts.length) tx.append(el('span', e.alts.map(([d, p]) => `${d} ${p}%`).join(' · '), 'alt'));
+        meta = e.ms === null ? '' : `${e.ms} ms`;
+      } else {
+        tx.append(`Backup rule went ${e.dir}`);
+        meta = e.reason;
+      }
+    } else if (e.kind === 'death') {
+      if (e.ghost) ic.append(ghostIcon(e.ghost));
+      const model = e.ghost ? this.subject.lineup?.[e.ghost] : undefined;
+      tx.textContent = e.ghost ? `Caught by ${GHOST_NAMES[e.ghost]}${model ? ` (${modelName(model)})` : ''}` : 'Caught';
+      // The life is taken when the dying animation ends, so `lives` still counts this one.
+      meta = e.lives > 2 ? `${e.lives - 1} lives left` : e.lives === 2 ? '1 life left' : '';
+    } else {
+      ic.textContent = e.icon;
+      tx.textContent = e.text;
+      meta = e.meta;
+    }
+    li.append(el('span', 't' in e ? clock(e.t) : '', 'tm'), ic, tx, el('span', meta, 'mt'));
+    return li;
+  }
+
+  private heading(): { title: string; sub: string } {
+    if (this.subject.kind === 'ghosts') return { title: this.over ? 'Their moves' : 'AI moves', sub: 'What the AIs playing the ghosts decided at each junction' };
+    if (this.subject.kind === 'classic') return { title: 'Your game', sub: 'The classic ghosts: no AI here, just the key moments' };
+    const name = this.subject.model ? modelName(this.subject.model) : 'The AI';
+    return { title: 'Activity log', sub: `What ${name} decides at each junction, with its odds` };
+  }
+
+  private renderToggle(): void {
+    const btn = this.root.querySelector<HTMLButtonElement>('.tog');
+    if (!btn) return;
+    const { title } = this.heading();
+    const n = this.totals.moves;
+    btn.querySelector('b')!.textContent = this.subject.kind === 'ghosts' && this.over ? 'Review their moves' : title;
+    this.toggleSub!.textContent =
+      this.subject.kind === 'ghosts' && this.over ? 'every ghost decision, with its odds' : `${n.toLocaleString('en-US')} ${n === 1 ? 'move' : 'moves'} so far`;
+    btn.querySelector('.chev')!.textContent = this.open ? 'Hide ▴' : 'Show ▾';
+    btn.setAttribute('aria-expanded', String(this.open));
+  }
+
+  private renderTotals(): void {
+    if (this.toggleSub) this.renderToggle();
+    if (!this.totalsEl) return;
+    const t = this.totals;
+    const cells: [string, string][] = [
+      ['Moves', t.moves.toLocaleString('en-US')],
+      ['Backup moves', t.backup.toLocaleString('en-US')],
+      ['Thinks in', t.calls ? `${Math.round(t.latency / t.calls)} ms` : '–'],
+      ['Cost', `$${t.cost.toFixed(4)}`],
+    ];
+    this.totalsEl.replaceChildren(
+      ...cells.map(([k, v]) => {
+        const d = el('div');
+        d.append(el('span', k), el('b', v));
+        return d;
+      }),
+    );
+  }
+
+  private render(): void {
+    const btn = el('button', undefined, 'tog');
+    btn.type = 'button';
+    btn.append(el('b'), (this.toggleSub = el('span', undefined, 'sub')), el('span', undefined, 'chev'));
+    btn.addEventListener('click', () => this.setOpen(!this.open));
+    const parts: HTMLElement[] = [btn];
+    this.list = null;
+    this.totalsEl = null;
+    if (this.open) {
+      const { sub } = this.heading();
+      const head = el('div', undefined, 'head');
+      const seg = el('div', undefined, 'seg');
+      seg.setAttribute('role', 'group');
+      seg.setAttribute('aria-label', 'Show');
+      for (const [key, label] of [['all', 'Every move'], ['key', 'Key moments']] as const) {
+        const b = el('button', label);
+        b.type = 'button';
+        b.setAttribute('aria-pressed', String(this.filter === key));
+        b.addEventListener('click', () => {
+          this.filter = key;
+          this.render();
+        });
+        seg.append(b);
+      }
+      head.append(el('p', sub), seg);
+      this.totalsEl = el('div', undefined, 'totals');
+      this.list = el('ol', undefined, 'log');
+      const rows = this.entries.filter((e) => this.visible(e));
+      this.list.append(...rows.map((e) => this.row(e)));
+      if (this.filter === 'key' && !rows.some((e) => e.kind !== 'sep')) this.list.append(el('li', 'No key moments yet. Deaths, ghosts eaten and fruit show up here.', 'ev sep empty'));
+      const foot = el('div', undefined, 'foot');
+      foot.append(el('span', 'The arrows on the board show the same odds.'), el('span', this.totals.dropped ? `${this.totals.dropped} late answers skipped` : ''));
+      parts.push(head, this.totalsEl, this.list, foot);
+    }
+    this.root.replaceChildren(...parts);
+    this.renderTotals();
+    this.renderToggle();
+  }
+}

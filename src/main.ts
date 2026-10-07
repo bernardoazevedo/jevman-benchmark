@@ -1,71 +1,92 @@
 import './style.css';
-import { accountNotice, fetchMe, renderAccount, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
+import { ActivityLog, type Subject } from './activity';
+import { accountNotice, fetchMe, POOL_EMPTY_NOTICE, poolAmount, renderAccount, signIn, takeAuthError, updatePoolAmount, walletNotice, type AccountView } from './auth';
+import { initialChoice, modelOptions, requestModel, type ModelChoice } from './choice';
 import { DemoPlayer, loadRecording } from './demo';
-import { hideOverlay, isClassic, showGameOver, showPlay, type GameOverExtra, type Sides } from './overlay';
-import { shareText, versus, versusLine } from './versus';
-import type { Leaderboard } from '../shared/leaderboard';
-import { Panel } from './panel';
-import { drawGame, FRUIT_EMOJI, TILE } from './render';
 import { greedyChoice, optionFeatures } from './features';
-import { Scheduler } from './scheduler';
-import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
-import { GameStats } from './stats';
-import { createHttpTransport, warmUp, type TransportHooks } from './transport';
-import { attachTouch } from './touch';
-import { cuesBetween, snapshot, Sound } from './sound';
-import { Thinking } from './thinking';
-import { initialChoice, loadStoredChoice, modelOptions, requestModel, saveChoice, type ModelChoice } from './choice';
-import type { ModelPicking } from './picker';
-import { effectiveChoice, ModelWarming } from './warming';
-import { DEFAULT_MODEL, modelName } from '../shared/models';
-import type { Dir } from './types';
+import { logoFor } from './logos';
+import { aiShareText, defaultLineup, GHOST_NAMES, hideOverlay, lineupNames, showGameOver, showPicker, showWatchOver, type Lineup, type Picker } from './overlay';
 import { appPath, SHARE_URL } from './paths';
+import { drawGame, TILE } from './render';
+import { renderLeaderboard } from './results';
+import { Scheduler } from './scheduler';
+import { createGame, jevActors, step, type Controls, type GameState } from './sim';
+import { cuesBetween, snapshot, Sound } from './sound';
+import { GameStats } from './stats';
+import { Thinking } from './thinking';
+import { attachTouch } from './touch';
+import { createHttpTransport, warmUp, type TransportHooks } from './transport';
+import { GHOST_IDS, type Dir } from './types';
+import { shareText, versus } from './versus';
+import { ModelWarming } from './warming';
+import type { Community, Leaderboard } from '../shared/leaderboard';
+import { DEFAULT_MODEL, modelName } from '../shared/models';
 
 const KEYS: Record<string, Dir> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
   w: 'up', s: 'down', a: 'left', d: 'right',
 };
-const DEMO_CAPTION = 'recorded game';
+/** Chip order under the board: jev first (its recorded benchmark game plays when the page opens), then by rank. */
+const WATCH_ORDER = ['typesafe/jev-1.13.0', 'opper/clef', 'opper/clef-flash', 'openai/gpt-6-luna-decisions', 'opper/kev-4b', 'berget/convaiinnovations/laya'];
+const LINEUP_KEY = 'jevman.ghosts';
+const BEST_KEY = 'jevman.best';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
-// The recorded demo downloads alongside /api/me; it plays when the page opens, for everyone.
+// The recorded benchmark game downloads alongside /api/me; it plays when the page opens, for everyone.
 const recording = loadRecording(appPath('/demo/jev-demo.json'));
 const me = await fetchMe();
 const authError = takeAuthError();
 const rec = await recording;
 
-let state: GameState = createGame();
 const canvas = $<HTMLCanvasElement>('#game');
+let state: GameState = createGame();
 canvas.width = state.maze.width * TILE;
 canvas.height = state.maze.height * TILE;
 const ctx = canvas.getContext('2d')!;
-const panelEl = $('#panel');
-/** The models' odds drawn on the board at each junction. */
+const boardEl = $('.board');
+const overlayEl = $('#overlay');
+const playCta = $<HTMLButtonElement>('#play-cta');
+const plateTag = $('#plate-tag');
+const plateLabel = $('#plate-label');
+const scoreEl = $('#score');
+const livesEl = $('#lives');
+const pauseBtn = $<HTMLButtonElement>('#pause');
+const muteBtn = $<HTMLButtonElement>('#mute');
+const noticeEl = $('#notice');
+const dpad = $('#dpad');
+const chipsEl = $('#watch-chips');
 const thinking = new Thinking();
-let panel = new Panel(panelEl);
+const log = new ActivityLog($('#activity'));
 
+// ---------- the account, top right ----------
 const accountEl = $('#account');
 let account: AccountView = {
-  kind: me.mode === 'player' ? 'player' : me.mode === 'pool' ? 'pool' : me.mode === 'dev' ? 'dev' : me.pool ? 'pool-empty' : rec ? 'demo' : 'signed-out',
+  kind: me.mode === 'player' ? 'player' : me.mode === 'pool' ? 'pool' : me.mode === 'dev' ? 'dev' : me.pool ? 'pool-empty' : 'signed-out',
   me,
 };
 const showAccount = (view: AccountView) => {
   account = view;
   renderAccount(accountEl, view);
 };
+showAccount({ ...account, notice: accountNotice(me, authError, false) });
+// The free credits tick down while people play: refresh the amount now and then, while the page is in view.
+if (me.mode === 'pool') {
+  setInterval(() => {
+    if (document.hidden || account.kind !== 'pool') return;
+    void fetchMe().then((fresh) => {
+      if (account.kind !== 'pool') return;
+      if (fresh.mode === 'pool') updatePoolAmount(accountEl, fresh.pool?.remainingUsd ?? null);
+      else if (fresh.mode === 'none' && fresh.pool && !fresh.unavailable) showAccount({ kind: 'pool-empty', me: fresh });
+    });
+  }, 60_000);
+}
 
-let clockMs = 0; // advances only while unpaused, so pausing never triggers timeouts
-let paused = false;
-let speed = 1;
-let last = performance.now();
+const notice = (text: string | null) => {
+  noticeEl.textContent = text ?? '';
+  noticeEl.hidden = !text;
+};
 
-const toggleBtn = $<HTMLButtonElement>('#toggle-pacman');
-const pauseBtn = $<HTMLButtonElement>('#pause');
-const speedIn = $<HTMLInputElement>('#speed');
-const speedOut = $('#speed-out');
-const restartBtn = $<HTMLButtonElement>('#restart');
-const playCta = $<HTMLButtonElement>('#play-cta');
-const muteBtn = $<HTMLButtonElement>('#mute');
+// ---------- sound ----------
 const sound = new Sound();
 const showSound = () => {
   muteBtn.textContent = sound.enabled ? '🔊' : '🔇';
@@ -79,82 +100,314 @@ const toggleSound = () => {
   showSound();
 };
 muteBtn.addEventListener('click', toggleSound);
-// Browsers allow audio only after a gesture; any click or key unlocks it.
-// (iOS only counts the end of a tap as a gesture, hence pointerup/touchend/click as well as pointerdown.)
+// Browsers allow audio only after a gesture; any click or key unlocks it (iOS counts only the end of a tap).
 for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => sound.unlock(), { passive: true });
-const dpad = $('#dpad');
-const boardEl = $('.board');
-/** The on-screen pad shows on touch screens while the player steers Pac-Man. */
-const touchScreen = matchMedia('(pointer: coarse)').matches;
-const help = $('.help');
-const hud = { score: $('#score'), level: $('#level'), lives: $('#lives'), fruit: $('#fruit-hud') };
 
-/** Set by a live game: wakes the models that play (they doze off during a long pause); false keeps the game paused. */
-let beforeResume: (() => Promise<boolean>) | null = null;
-let resuming = false;
-/** Which live game is running; a slow callback (Resume, Play again, a side switch) from an older one does nothing. */
+// ---------- models ----------
+const offered = modelOptions(me).map((o) => o.id);
+const defaultModel = me.defaultModel ?? DEFAULT_MODEL;
+/** Whether live AI games can be paid for: the free credits, a signed-in player's wallet, or a local key. */
+let canUseAI = me.mode !== 'none';
+const base: ModelChoice = initialChoice(me, null);
+let choice: ModelChoice = { ...base };
+
+function loadLineup(): Lineup {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LINEUP_KEY) ?? 'null') as Partial<Lineup> | null;
+    if (saved && GHOST_IDS.every((g) => typeof saved[g] === 'string' && offered.includes(saved[g]!))) return saved as Lineup;
+  } catch {
+    // nothing stored, or blocked storage
+  }
+  return defaultLineup(offered);
+}
+let lineup: Lineup = loadLineup();
+const saveLineup = (l: Lineup) => {
+  try {
+    localStorage.setItem(LINEUP_KEY, JSON.stringify(l));
+  } catch {
+    // not remembered
+  }
+};
+
+// ---------- calls ----------
+let poolNoticeShown = false;
+const hooks: TransportHooks = {
+  onPoolEmpty: () => {
+    canUseAI = false;
+    if (poolNoticeShown) return;
+    poolNoticeShown = true;
+    showAccount({ kind: 'pool-empty', me: { ...me, mode: 'none', pool: { open: false, remainingUsd: 0 } } });
+    notice(`${POOL_EMPTY_NOTICE} The AIs fall back to a simple rule until then.`);
+  },
+  onSignedOut: () => {
+    canUseAI = me.mode === 'pool';
+    showAccount({ kind: me.pool ? 'pool' : 'signed-out', me });
+    notice('Your Opper sign-in has expired. Log in again to keep playing on your account.');
+  },
+  onWalletEmpty: (url) => {
+    showAccount({ ...account, ...walletNotice(url) });
+    notice('Your Opper wallet is empty. Top it up to keep playing.');
+  },
+};
+const transport = createHttpTransport(hooks);
+const warmProblems = new Map<string, string>();
+const warming = new ModelWarming({
+  warmUp: async (m) => {
+    const r = await warmUp(m === defaultModel ? undefined : m, hooks);
+    if (r.ok) warmProblems.delete(m);
+    else if (r.account) warmProblems.set(m, r.error);
+    return r.ok;
+  },
+  now: () => Date.now(),
+});
+const problemOf = (models: string[]) => models.map((m) => warmProblems.get(m)).find((p) => p !== undefined);
+
+// ---------- what is on the board ----------
+type Mode = { kind: 'recording' } | { kind: 'watch'; model: string } | { kind: 'play'; lineup: Lineup | null };
+let mode: Mode = { kind: 'recording' };
+let demo: DemoPlayer | null = null;
+/** Whether a live game runs (anything but the recording). */
+let live = false;
+let paused = false;
 let gameId = 0;
-function togglePause(): void {
-  if (!overlayEl.hidden || resuming) return; // nothing is running behind the Play / game-over card
-  if (paused && beforeResume) {
-    resuming = true;
-    pauseBtn.textContent = 'Waking up…';
-    const id = gameId;
-    void beforeResume().then((ok) => {
-      if (id !== gameId) return; // that game was restarted meanwhile
-      resuming = false;
-      paused = !ok || document.hidden;
-      pauseBtn.textContent = paused ? 'Resume' : 'Pause';
-    });
+let gameOverShown = false;
+/** Seconds of play in this game (or loop of the recording), for the log's timestamps. */
+let playT = 0;
+let clockMs = 0;
+let last = performance.now();
+let picker: Picker | null = null;
+/** What Space/Enter does while a card is open. */
+let overlayAction: (() => void) | null = null;
+
+let stats = new GameStats();
+const slots = { inFlight: 0 };
+const newScheduler = (gameStats: GameStats) =>
+  new Scheduler({
+    transport,
+    slots,
+    // Four ghosts on four different models are four requests at once.
+    maxInFlight: 4,
+    actors: jevActors,
+    modelFor: (actor) => requestModel(choice, actor, defaultModel),
+    now: () => clockMs,
+    onEvent: (e) => {
+      if (gameStats !== stats) return; // an answer for a game that has ended
+      if (e.type === 'call' && e.model) warming.touch(e.model === 'jev-1.13.0' ? DEFAULT_MODEL : e.model);
+      log.handle(e, playT);
+      if (e.type === 'decision') thinking.add(e.decision, performance.now());
+      stats.onSchedulerEvent(e);
+    },
+  });
+let scheduler = newScheduler(stats);
+// The characters no AI plays follow the classic rules.
+const controls: Controls = {
+  decide: (point, s) => (jevActors(s).includes(point.actor) ? scheduler.decide(point, s) : greedyChoice(s, point, optionFeatures(s, point))),
+};
+
+const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
+function setPlate(label: string | null = null): void {
+  if (label !== null) {
+    plateTag.hidden = true;
+    plateLabel.textContent = label;
     return;
   }
-  paused = !paused;
-  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  const b = (text: string) => Object.assign(document.createElement('b'), { textContent: text });
+  if (mode.kind === 'recording' || mode.kind === 'watch') {
+    const model = mode.kind === 'watch' ? mode.model : (rec?.model ?? DEFAULT_MODEL);
+    plateTag.hidden = false;
+    plateTag.textContent = mode.kind === 'recording' ? 'Benchmark game' : 'Live';
+    plateLabel.replaceChildren(b(modelName(model)), ' vs the classic ghosts');
+  } else {
+    plateTag.hidden = true;
+    plateLabel.replaceChildren(b('You'), mode.lineup ? ` vs ${lineupNames(mode.lineup)}` : ' vs the classic ghosts');
+  }
 }
-pauseBtn.addEventListener('click', togglePause);
 
-const overlayEl = $('#overlay');
-const keyActions = new Map<string, () => void>([['p', togglePause], ['m', toggleSound]]);
-/** What Space/Enter does while an overlay is open (Play, Play again), or on the demo (open the Play card). */
-let overlayAction: (() => void) | null = null;
-/** What Escape does: close the Play card and go back to the demo. */
-let closeAction: (() => void) | null = null;
-let steer: ((dir: Dir) => void) | null = null;
-let tick: (dt: number) => void = () => {};
+function renderChips(): void {
+  const current = mode.kind === 'recording' ? (rec?.model ?? null) : mode.kind === 'watch' ? mode.model : null;
+  chipsEl.replaceChildren(
+    ...WATCH_ORDER.filter((m) => offered.includes(m) || m === rec?.model).map((m) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.setAttribute('role', 'radio');
+      chip.setAttribute('aria-checked', String(m === current));
+      const logo = logoFor(m);
+      if (logo) chip.append(logo);
+      chip.append(modelName(m));
+      chip.title = m === rec?.model ? `${modelName(m)}'s recorded benchmark game` : `Watch ${modelName(m)} play live`;
+      chip.addEventListener('click', () => watch(m));
+      return chip;
+    }),
+  );
+}
 
-// The recorded game plays (no input, no /api/decide calls, nothing billed) until a live game starts.
-let demo: DemoPlayer | null = null;
-const LIVE_CONTROLS = [toggleBtn, restartBtn, speedIn];
-function startDemo(r: NonNullable<typeof rec>): void {
-  demo = new DemoPlayer(r, { onLoop: () => (panel = new Panel(panelEl, { caption: DEMO_CAPTION, playedBy: modelName(r.model) })) });
-  state = demo.state;
-  panel = new Panel(panelEl, { caption: DEMO_CAPTION, playedBy: modelName(r.model) });
-  // Controls that only mean something in a live game stay out of the way until one starts.
-  for (const control of LIVE_CONTROLS) (control.closest('label') ?? control).hidden = true;
-  help.textContent = 'Recorded game · press Play (or Space) to play live';
+const setPaused = (p: boolean) => {
+  paused = p;
+  pauseBtn.textContent = p ? '▶' : 'II';
+  pauseBtn.setAttribute('aria-label', p ? 'Resume' : 'Pause');
+};
+const dim = (on: boolean) => boardEl.classList.toggle('dim', on);
+
+/** Ends whatever was running: answers still in flight reach the old scheduler and are ignored. */
+function retire(): void {
+  gameId += 1;
+  scheduler.reset();
+  stats = new GameStats();
+  scheduler = newScheduler(stats);
+  thinking.clear();
+  live = false;
+}
+
+/** The recorded benchmark game: plays when the page opens, costs nothing. */
+function showRecording(): void {
+  retire();
+  picker = null;
+  overlayAction = null;
+  hideOverlay(overlayEl);
+  dim(false);
+  mode = { kind: 'recording' };
   playCta.hidden = false;
-  tick = (dt) => {
-    for (const e of demo!.advance(dt)) {
-      panel.handle(e);
-      if (e.type === 'decision') thinking.add(e.decision, performance.now());
-    }
-    state = demo!.state;
-  };
-}
-function endDemo(): void {
-  demo = null;
-  for (const control of LIVE_CONTROLS) (control.closest('label') ?? control).hidden = false;
-  help.textContent = 'Arrows/WASD or swipe steer when you play Pac-Man · J: Pac-Man to the AI or back · P pause · R restart';
-  playCta.hidden = true;
+  setPaused(false);
+  playT = 0;
+  if (rec) {
+    const subject: Subject = { kind: 'pacman', model: rec.model, recorded: true };
+    demo = new DemoPlayer(rec, {
+      onLoop: () => {
+        playT = 0;
+        thinking.clear();
+        log.begin(subject);
+      },
+    });
+    state = demo.state;
+    log.begin(subject);
+  } else {
+    demo = null;
+    state = createGame();
+  }
+  setPlate();
+  renderChips();
 }
 
-// The leaderboard, to compare a game with (loaded in the background; a game over before it arrives just skips it).
+/** A live game: an AI playing Pac-Man (watch), or you against AI ghosts or the classic ghosts (play). */
+function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
+  retire();
+  demo = null;
+  picker = null;
+  overlayAction = null;
+  mode = next;
+  choice = next.kind === 'watch' ? { ...base, pacman: next.model } : next.lineup ? { ...base, ...next.lineup } : { ...base };
+  state = createGame({ pacmanControl: next.kind === 'watch' ? 'jev' : 'keyboard', ghostsByAI: next.kind === 'play' && next.lineup !== null });
+  log.begin(next.kind === 'watch' ? { kind: 'pacman', model: next.model } : next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
+  log.setOpen(false);
+  hideOverlay(overlayEl);
+  dim(false);
+  playCta.hidden = true;
+  gameOverShown = false;
+  playT = 0;
+  live = true;
+  setPaused(document.hidden);
+  sound.play('start');
+  setPlate();
+  renderChips();
+}
+
+/** The models a live game needs, woken first (an idle one can take seconds to answer its first call). */
+function wakeThen(models: string[], onWaiting: (cold: string[]) => void, start: () => void, onFail: (msg: string) => void): void {
+  const id = gameId;
+  void warming.warmAll(() => models, onWaiting).then((failed) => {
+    if (id !== gameId) return; // something else started meanwhile
+    if (failed.length) return onFail(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up in time. Try again in a moment.`);
+    start();
+  });
+}
+
+/** A chip under the board (or Watch in the leaderboard): the recording for jev, a live game for the others. */
+function watch(model: string): void {
+  notice(null);
+  if (rec && model === rec.model) return showRecording();
+  if (!canUseAI) return notice(`${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Log in to watch ${modelName(model)} play live on your own Opper account.`);
+  retire();
+  hideOverlay(overlayEl);
+  playCta.hidden = true;
+  mode = { kind: 'watch', model };
+  renderChips();
+  setPlate(`Waking up ${modelName(model)}…`);
+  wakeThen(
+    [model],
+    () => {},
+    () => startGame({ kind: 'watch', model }),
+    (msg) => {
+      notice(msg);
+      showRecording();
+    },
+  );
+}
+
+const costNote = (): string => {
+  if (!canUseAI) return `${account.kind === 'pool-empty' ? 'The free credits are used up. ' : ''}Log in to play on your own Opper account, about 2¢ a game.`;
+  if (account.kind === 'player') return 'On your Opper account, about 2¢ a game.';
+  if (account.kind === 'dev') return 'On the local key from .env.';
+  const left = poolAmount(account.me.pool?.remainingUsd ?? null);
+  return `Free while the shared credits last${left ? ` (${left} left)` : ''}. About 2¢ a game.`;
+};
+
+/** "▶ Play against the AIs": who plays the ghosts, then Start. */
+function openPicker(): void {
+  if (picker) return;
+  notice(null);
+  dim(true);
+  playCta.hidden = true;
+  const ghostModels = () => [...new Set(GHOST_IDS.map((g) => lineup[g]))];
+  const p = showPicker(overlayEl, {
+    lineup: () => lineup,
+    offered,
+    canPlay: canUseAI,
+    costNote: costNote(),
+    loginAvailable: me.loginAvailable,
+    onChange: (l) => {
+      lineup = l;
+      saveLineup(l);
+      // Wake them while the player is still choosing: one tiny call each.
+      if (canUseAI) for (const m of ghostModels()) void warming.warm(m);
+    },
+    onStart: () => {
+      const l = { ...lineup };
+      const models = ghostModels();
+      const id = gameId;
+      void warming.warmAll(() => models, (cold) => p.busy(`Waking up ${cold.map(short).join(' and ')}…`)).then((failed) => {
+        if (id !== gameId || picker !== p) return; // closed or replaced meanwhile
+        const awake = models.filter((m) => !failed.includes(m));
+        if (!awake.length) {
+          p.busy(null);
+          return p.note(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up in time. Try again in a moment.`);
+        }
+        // One sleepy model shouldn't hold up the game: an awake one plays its ghosts this time.
+        const stand = awake.includes(defaultModel) ? defaultModel : awake[0];
+        const played = Object.fromEntries(GHOST_IDS.map((g) => [g, failed.includes(l[g]) ? stand : l[g]])) as Lineup;
+        startGame({ kind: 'play', lineup: played });
+        const stood = GHOST_IDS.filter((g) => played[g] !== l[g]).map((g) => GHOST_NAMES[g]);
+        if (stood.length) notice(`${failed.map(modelName).join(' and ')} didn't wake up in time, so ${modelName(stand)} plays ${stood.join(' and ')} this game.`);
+      });
+    },
+    onClassic: () => startGame({ kind: 'play', lineup: null }),
+    onLogin: signIn,
+    onBack: closePicker,
+  });
+  picker = p;
+  overlayAction = p.action;
+  if (canUseAI) for (const m of ghostModels()) void warming.warm(m);
+}
+function closePicker(): void {
+  picker = null;
+  overlayAction = null;
+  hideOverlay(overlayEl);
+  dim(false);
+  if (!live) playCta.hidden = false;
+}
+
+// ---------- game over ----------
 let board: Leaderboard | null = null;
-const boardLoaded = fetch(appPath('/leaderboard.json'))
-  .then((r) => (r.ok ? (r.json() as Promise<Leaderboard>) : null))
-  .then((b) => void (board = b))
-  .catch(() => {});
-const BEST_KEY = 'jevman.best';
 const readBest = (): number => {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -169,6 +422,7 @@ const writeBest = (score: number) => {
     // not remembered
   }
 };
+const touchScreen = matchMedia('(pointer: coarse)').matches;
 /** The system share sheet on phones (where people share from), else the clipboard. */
 async function shareScore(text: string): Promise<'shared' | 'copied' | 'failed' | 'cancelled'> {
   if (navigator.share && touchScreen) {
@@ -176,7 +430,7 @@ async function shareScore(text: string): Promise<'shared' | 'copied' | 'failed' 
       await navigator.share({ text });
       return 'shared';
     } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return 'cancelled'; // the player closed the sheet
+      if ((err as Error)?.name === 'AbortError') return 'cancelled';
     }
   }
   try {
@@ -187,466 +441,172 @@ async function shareScore(text: string): Promise<'shared' | 'copied' | 'failed' 
   }
 }
 
-/** Opens the Play card (or the sign-in card); returns to the demo when closed. */
-let openPlay: () => void;
-const closePlay = () => {
-  hideOverlay(overlayEl);
-  overlayAction = openPlay;
-  closeAction = null;
-  playCta.hidden = false;
-  playCta.focus({ preventScroll: true });
-};
-
-if (me.mode === 'none') {
-  // From "Watch Clef play" while signed out: remember the pick through the sign-in round trip (it is checked against
-  // the models the key can use once signed in).
-  const linked = new URLSearchParams(location.search).get('pacman');
-  if (linked) {
-    const stored = loadStoredChoice();
-    saveChoice({ ...(stored && typeof stored === 'object' ? stored : {}), pacman: linked } as ModelChoice);
+function gameOver(): void {
+  gameOverShown = true;
+  dim(true);
+  const summary = stats.summary(state);
+  if (mode.kind === 'watch') {
+    const model = mode.model;
+    const average = board?.entries.find((e) => e.model === model)?.meanScore ?? null;
+    overlayAction = () => watch(model);
+    return showWatchOver(overlayEl, { model, score: state.score, average, onAgain: () => watch(model), onPlay: openPicker });
   }
-}
-// The live game, for everyone: signed out it is the classic game only (the player against the scripted ghosts, no AI).
-{
-  let signedOutShown = false;
-  let walletShown = false;
-  let poolEmptyShown = false;
-  const hooks: TransportHooks = {
-    onPoolEmpty: () => {
-      if (poolEmptyShown) return; // once per page load, not once per failed call
-      poolEmptyShown = true;
-      showAccount({ kind: 'pool-empty', me: { ...me, mode: 'none', pool: { open: false, remainingUsd: 0 } } });
-    },
-    onSignedOut: () => {
-      if (signedOutShown) return; // render the aria-live region once per signed-in -> signed-out transition
-      signedOutShown = true;
-      showAccount({ kind: 'signed-out', me: { ...me, mode: 'none' } });
-    },
-    onWalletEmpty: (url) => {
-      if (walletShown) return; // one notice per page load, not one per failed call
-      walletShown = true;
-      showAccount({ ...account, ...walletNotice(url) });
-    },
-  };
-  const transport = createHttpTransport(hooks);
-  // Who steers Pac-Man in the next live game (the demo's own state is a recording).
-  const canUseAI = me.mode !== 'none';
-  let liveMode: Sides = canUseAI ? { pacman: 'ai', ghosts: 'classic' } : { pacman: 'you', ghosts: 'classic' };
-  const sides = (m: Sides) => ({ pacmanControl: m.pacman === 'ai' ? ('jev' as const) : ('keyboard' as const), ghostsByAI: m.ghosts === 'ai' });
-  const played = () => jevActors(started ? state : sides(liveMode));
-  /** Whether this game has been the classic game from the start, so its score compares with the leaderboard. */
-  let classicThroughout = false;
-  /** Whether the AI has played Pac-Man the whole game, on one model, so it compares with that model's average. */
-  let aiPacmanThroughout: string | null = null;
-  let gameOverExtra: GameOverExtra = {};
-  /** Whether the speed slider was below 1× at any point this game: the leaderboard ran at full speed. */
-  let slowed = false;
-  /** The game-over extras: you against the AIs (classic game), or the AI against its leaderboard average. */
-  const resultOf = (score: number): GameOverExtra => {
-    if (slowed && (classicThroughout || aiPacmanThroughout !== null)) {
-      return { aiNote: 'Played below full speed, so this game is not compared with the leaderboard (the AIs played at 1×).' };
-    }
-    if (classicThroughout) {
-      const best = readBest();
-      const newBest = score > best;
-      if (newBest) writeBest(score);
-      if (!board?.entries.length) return { newBest, best };
-      const v = versus(board, score);
-      const text = shareText(v, SHARE_URL);
-      return { newBest, best, versus: versusLine(v), share: () => shareScore(text) };
-    }
-    const entry = aiPacmanThroughout ? board?.entries.find((e) => e.model === aiPacmanThroughout) : undefined;
-    if (entry) {
-      return {
-        aiNote: `${entry.name} scored ${score.toLocaleString('en-US')} this game; its leaderboard average is ${entry.meanScore.toLocaleString('en-US')}.`,
-      };
-    }
-    return {};
-  };
-  // Which model plays each character: the server default until the player picks, remembered in this browser.
-  const defaultModel = me.defaultModel ?? DEFAULT_MODEL;
-  // `wanted` is what the player picked; `choice` is what plays. A newly picked model takes over once it is awake, so a
-  // cold one doesn't turn the next moves into fallbacks.
-  let wanted: ModelChoice = initialChoice(me, loadStoredChoice());
-  // "Watch Clef play" on the leaderboard links here with ?pacman=<model>.
-  const linked = new URLSearchParams(location.search).get('pacman');
-  if (linked && modelOptions(me).some((o) => o.id === linked)) wanted = { ...wanted, pacman: linked };
-  let choice: ModelChoice = { ...wanted };
-  // A model's last permanent warm-up refusal (signed out, wallet, not enabled): Play says that, not "didn't wake up".
-  // Per model: concurrent warm-ups must not overwrite each other's answer.
-  const warmProblems = new Map<string, string>();
-  const problemOf = (models: string[]) => models.map((m) => warmProblems.get(m)).find((p) => p !== undefined);
-  const warming = new ModelWarming({
-    warmUp: async (m) => {
-      const r = await warmUp(m === defaultModel ? undefined : m, hooks);
-      // A refusal holds until the model actually answers (a later timeout doesn't make it less true).
-      if (r.ok) warmProblems.delete(m);
-      else if (r.account) warmProblems.set(m, r.error);
-      return r.ok;
-    },
-    now: () => Date.now(),
-  });
-  const playedModels = () => [...new Set(played().map((id) => wanted[id]))];
-  const adopt = () => {
-    choice = effectiveChoice(wanted, choice, (m) => warming.isWarm(m), defaultModel);
-  };
-  /** Warm the models that play now; each takes over as soon as it is awake. */
-  const warmPlayed = () => {
-    for (const m of playedModels()) {
-      void warming.warm(m).then((ok) => {
-        if (ok) panel.clearAlert(`model:${m}`); // that model's retry worked: its "still playing …" note no longer holds
-        if (!ok && started) {
-          // The pick never took over: show what is really playing, and say why.
-          const stuck = played().filter((id) => wanted[id] === m && choice[id] !== m);
-          if (stuck.length) {
-            wanted = { ...wanted, ...Object.fromEntries(stuck.map((id) => [id, choice[id]])) };
-            saveChoice(wanted);
-            panel.syncModels();
-            panel.alert(problemOf([m]) ?? `${modelName(m)} didn't wake up; still playing ${modelName(choice[stuck[0]])}. Pick it again to retry.`, `model:${m}`);
-          }
+  if (mode.kind !== 'play') return;
+  const l = mode.lineup;
+  let newBest = false;
+  if (!l) {
+    // The classic ghosts are the benchmark's own game: a personal best counts there.
+    newBest = summary.score > readBest();
+    if (newBest) writeBest(summary.score);
+  }
+  const again = () => startGame({ kind: 'play', lineup: l });
+  overlayAction = again;
+  showGameOver(overlayEl, {
+    summary,
+    lineup: l,
+    board,
+    newBest,
+    onPlayAgain: again,
+    onShare: () => shareScore(l ? aiShareText(summary, l, SHARE_URL) : board ? shareText(versus(board, summary.score), SHARE_URL) : `I scored ${summary.score} at jevman 🟡 ${SHARE_URL}`),
+    onReview: l
+      ? () => {
+          log.setOpen(true);
+          $('#activity').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        adopt();
-      });
-    }
-    adopt();
-  };
-  const picking: ModelPicking = {
-    options: modelOptions(me),
-    choice: () => wanted,
-    onChange: (next) => {
-      if (started && next.pacman !== wanted.pacman) aiPacmanThroughout = null;
-      wanted = next;
-      saveChoice(next);
-      panel.syncModels();
-      if (!started) choice = { ...next }; // Play waits for them
-      warmPlayed();
-    },
-  };
-  let stats = new GameStats();
-  // One scheduler per game: answers still in flight from a restarted game reach its old scheduler and are ignored.
-  // They share one in-flight counter, so restarting can't stack up more concurrent (billed) requests.
-  const slots = { inFlight: 0 };
-  const newScheduler = (gameStats: GameStats) =>
-    new Scheduler({
-      transport,
-      slots,
-      actors: jevActors,
-      modelFor: (actor) => requestModel(choice, actor, defaultModel),
-      now: () => clockMs,
-      onEvent: (e) => {
-        if (gameStats !== stats) return;
-        if (e.type === 'call' && e.model) warming.touch(e.model === 'jev-1.13.0' ? DEFAULT_MODEL : e.model);
-        panel.handle(e);
-        if (e.type === 'decision') thinking.add(e.decision, performance.now());
-        stats.onSchedulerEvent(e);
-        // A request still in flight at game over reports afterwards; keep the card's numbers complete.
-        if (gameOverShown && !overlayEl.hidden) showGameOver(overlayEl, stats.summary(state), playAgain, gameOverExtra);
-      },
-    });
-  let scheduler = newScheduler(stats);
-  // The sides the AI doesn't play follow the scripted rules.
-  const controls: Controls = {
-    decide: (point, s) => (jevActors(s).includes(point.actor) ? scheduler.decide(point, s) : greedyChoice(s, point, optionFeatures(s, point))),
-  };
-  // No live game runs until the player presses Play in the card. Picking a model there does send its warm-up (one
-  // tiny call, about $0.000001) right away, so it is likely awake by the time Play is pressed.
-  let started = false;
-  let gameOverShown = false;
-  let playCard: ReturnType<typeof showPlay> | null = null;
-  /** The card whose Play is waiting for models to wake; closing that card cancels the start. */
-  let waitingFor: ReturnType<typeof showPlay> | null = null;
-  /** The card's Play: wake the chosen models first (a few seconds when one has been idle), then start. */
-  const play = (): void => {
-    const card = playCard;
-    if (started || !card || waitingFor === card) return;
-    waitingFor = card;
-    void warming
-      .warmAll(playedModels, (cold) => card.busy(`Waking up ${cold.map(modelName).join(' and ')}…`))
-      .then((failed) => {
-        if (waitingFor === card) waitingFor = null;
-        if (playCard !== card) return; // closed while waking: stay on the demo, start nothing
-        card.busy(null);
-        if (failed.length) {
-          const names = failed.map(modelName).join(' and ');
-          return card.note(problemOf(failed) ?? `${names} didn't wake up in time. Press Play to try again, or pick another model.`);
-        }
-        choice = { ...wanted };
-        newGame();
-      });
-  };
-  /** A fresh live game (the first one ends the demo). */
-  /** Ends whatever was pending for the game before (a J switch, Resume, Play again): their callbacks now do nothing. */
-  const retireGame = (): void => {
-    gameId += 1;
-    switching = false;
-    resuming = false;
-    restarting = false;
-  };
-  const newGame = (): void => {
-    retireGame();
-    if (demo) endDemo();
-    if (!canUseAI) {
-      toggleBtn.disabled = true; // the classic game only, until signing in
-      toggleBtn.title = 'Sign in with Opper to watch the AI or face AI ghosts';
-      help.textContent = 'Arrows/WASD or swipe steer · P pause · R restart · M sound';
-      if (account.kind === 'demo' || account.kind === 'signed-out') showAccount({ kind: 'free', me });
-    }
-    if (!switching) showToggle(liveMode);
-    state = createGame(sides(liveMode));
-    thinking.clear();
-    slowed = speed < 1;
-    classicThroughout = isClassic(liveMode);
-    // Only against the classic ghosts does the AI's score compare with its leaderboard average.
-    aiPacmanThroughout = liveMode.pacman === 'ai' && liveMode.ghosts === 'classic' ? choice.pacman : null;
-    sound.play('start');
-    gameOverExtra = {};
-    scheduler.reset();
-    stats = new GameStats();
-    scheduler = newScheduler(stats);
-    panel = new Panel(panelEl, { models: picking });
-    panel.enableModelPickers();
-    gameOverShown = false;
-    // A game that finished waking while the tab was hidden starts paused (Resume then re-checks the models).
-    paused = document.hidden;
-    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
-    started = true;
-    playCard = null;
-    overlayAction = null;
-    closeAction = null;
-    hideOverlay(overlayEl);
-  };
-
-  let switching = false;
-  const showToggle = (m: Sides) => {
-    toggleBtn.textContent = `Pac-Man: ${m.pacman === 'ai' ? 'AI' : 'you'}`;
-    toggleBtn.setAttribute('aria-pressed', String(m.pacman === 'ai'));
-  };
-  const setMode = (mode: Sides): void => {
-    if (switching || (!canUseAI && !isClassic(mode))) return;
-    const apply = () => {
-      if (mode.pacman !== liveMode.pacman || mode.ghosts !== liveMode.ghosts) {
-        classicThroughout = false;
-        aiPacmanThroughout = null;
-      }
-      liveMode = mode;
-      if (started) {
-        Object.assign(state, sides(mode));
-        state.keyDir = null;
-        panel.clearAlert('switch');
-      }
-      showToggle(mode);
-      playCard?.select(mode);
-      if (started) warmPlayed();
-    };
-    if (!started) return apply();
-    // Mid-game: the side that takes over keeps waiting for its models; the current side plays on meanwhile.
-    const incoming = [...new Set(jevActors(sides(mode)).map((id) => wanted[id]))];
-    if (incoming.every((m) => warming.isWarm(m))) return apply();
-    switching = true;
-    toggleBtn.textContent = 'Waking up…';
-    const id = gameId;
-    void warming.warmAll(() => incoming, () => {}).then((failed) => {
-      if (id !== gameId) return; // Restart cancelled this switch
-      switching = false;
-      if (failed.length) {
-        // The current side plays on; say why the switch didn't happen.
-        showToggle(liveMode);
-        panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the sides didn't switch. Press J to try again.`, 'switch');
-        return;
-      }
-      adopt();
-      apply();
-    });
-  };
-  const togglePacman = (): void => {
-    if (!canUseAI || (!started && !playCard)) return; // signed out (classic only), or J on the demo
-    // J hands Pac-Man to the AI or takes him back; the ghosts stay as they are.
-    setMode({ ...liveMode, pacman: liveMode.pacman === 'ai' ? 'you' : 'ai' });
-  };
-  let restarting = false;
-  /** Play again on the game-over card: the same game again, waking models that went cold on that card first. */
-  const playAgain = (): void => {
-    if (!started || restarting) return;
-    restarting = true;
-    const id = gameId;
-    void warming.warmAll(playedModels, () => {}).then((failed) => {
-      if (id !== gameId) return; // Restart (and maybe another game) came first; their flags are their own
-      restarting = false;
-      if (failed.length) {
-        // Stay where we are (the game-over card, or the game) rather than start on a model that isn't there.
-        panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the game didn't restart. Try again, or pick another model on the cards.`, 'restart');
-        return;
-      }
-      adopt();
-      newGame();
-    });
-  };
-  /** Restart (the button, R): end this game and pick what to play next in the Play card. */
-  const restart = (): void => {
-    // Restart wins over a Play again or a J switch still waking models: both check for it when they finish.
-    if (!started) return;
-    retireGame();
-    showToggle(liveMode);
-    started = false; // nothing runs (or is billed) behind the card
-    paused = false;
-    // Retire the old game: answers still in flight reach its scheduler and stats, not the card.
-    gameOverShown = false;
-    scheduler.reset();
-    stats = new GameStats();
-    scheduler = newScheduler(stats);
-    pauseBtn.textContent = 'Pause';
-    openPlay();
-  };
-  openPlay = () => {
-    if (started || playCard) return;
-    playCta.hidden = true;
-    playCard = showPlay(overlayEl, me, {
-      sides: liveMode,
-      onSelect: setMode,
-      onPlay: () => play(),
-      models: picking,
-      averages: () => board?.entries,
-      onClose: demo ? () => ((playCard = null), closePlay()) : undefined,
-    });
-    overlayAction = playCard.action;
-    closeAction = demo ? () => ((playCard = null), closePlay()) : null;
-  };
-  // A card opened before the leaderboard arrived (a ?pacman= link) shows the model's average once it does.
-  void boardLoaded.then(() => playCard?.select(liveMode));
-  toggleBtn.addEventListener('click', togglePacman);
-  restartBtn.addEventListener('click', restart);
-  speedIn.addEventListener('input', () => {
-    speed = Number(speedIn.value);
-    speedOut.textContent = `${speed.toFixed(2)}×`;
-    if (speed < 1) slowed = true;
+      : null,
+    onBack: showRecording,
   });
-  keyActions.set('j', togglePacman).set('r', restart);
-  // A hidden tab pauses a live game (and the browser stops the clock anyway); resuming wakes the models first.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && started && !paused && overlayEl.hidden) {
-      paused = true;
-      pauseBtn.textContent = 'Resume';
-    }
-  });
-  beforeResume = async () => {
-    if (!started) return true;
-    const id = gameId;
-    const failed = await warming.warmAll(playedModels, () => {});
-    if (id !== gameId) return false; // restarted meanwhile: nothing here is about the new game
-    if (failed.length) {
-      panel.alert(problemOf(failed) ?? `${failed.map(modelName).join(' and ')} didn't wake up, so the game stays paused. Press Resume to try again.`, 'resume');
-      return false;
-    }
-    panel.clearAlert('resume');
-    adopt();
-    return true;
-  };
-  steer = (dir) => {
-    if (started) state.keyDir = dir;
-  };
-  attachTouch($('.board'), dpad, (dir) => steer?.(dir), () => started && state.pacmanControl === 'keyboard' && overlayEl.hidden === true);
-  const liveTick = (dt: number) => {
-    clockMs += dt * 1000;
-    scheduler.update(state);
-    stats.beforeStep(state);
-    const heard = snapshot(state);
-    step(state, dt * speed, controls);
-    stats.afterStep(state, dt * speed);
-    for (const cue of cuesBetween(heard, state)) sound.play(cue);
-    if (state.status === 'gameover' && !gameOverShown) {
-      gameOverShown = true;
-      overlayAction = playAgain;
-      gameOverExtra = resultOf(state.score);
-      showGameOver(overlayEl, stats.summary(state), playAgain, gameOverExtra);
-    }
-  };
-  const demoTick = (dt: number) => {
-    for (const e of demo!.advance(dt)) {
-      panel.handle(e);
-      if (e.type === 'decision') thinking.add(e.decision, performance.now());
-    }
-    state = demo!.state;
-  };
-  // One tick for both phases: the demo until the first live game, then the live game.
-  tick = (dt) => (started ? liveTick(dt) : demo ? demoTick(dt) : undefined);
 }
 
-playCta.addEventListener('click', () => openPlay());
-if (rec) {
-  const both = tick;
-  startDemo(rec);
-  tick = both; // one tick plays the demo until a live game starts
-  overlayAction = openPlay;
-  // From "Watch Clef play" on the leaderboard: straight to the Play card, with that model picked.
-  if (new URLSearchParams(location.search).has('pacman')) openPlay();
-} else {
-  // No recording to show: open the card straight away, as before.
-  for (const control of LIVE_CONTROLS) control.disabled = false;
-  openPlay();
-}
-showAccount({ ...account, notice: accountNotice(me, authError, me.mode === 'none' && Boolean(rec)) });
-// The free credits tick down while people play: refresh the header's amount now and then, while the page is in view.
-if (me.mode === 'pool') {
-  setInterval(() => {
-    if (document.hidden || account.kind !== 'pool') return;
-    void fetchMe().then((fresh) => {
-      if (account.kind !== 'pool') return;
-      if (fresh.mode === 'pool') updatePoolAmount(accountEl, fresh.pool?.remainingUsd ?? null);
-      else if (fresh.mode === 'none' && fresh.pool && !fresh.unavailable) showAccount({ kind: 'pool-empty', me: fresh });
+// ---------- controls ----------
+function togglePause(): void {
+  if (!overlayEl.hidden) return;
+  if (paused && live) {
+    // Models doze off during a long pause: wake them before the game goes on.
+    const id = gameId;
+    const models = [...new Set(jevActors(state).map((a) => choice[a]))];
+    setPlate('Waking up…');
+    void warming.warmAll(() => models, () => {}).then((failed) => {
+      if (id !== gameId) return;
+      setPlate();
+      if (failed.length) return notice(problemOf(failed) ?? 'The AIs did not wake up, so the game stays paused. Press play to try again.');
+      setPaused(false);
     });
-  }, 60_000);
+    return;
+  }
+  setPaused(!paused);
 }
+pauseBtn.addEventListener('click', togglePause);
+playCta.addEventListener('click', openPicker);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && live && !paused && overlayEl.hidden) setPaused(true);
+});
+const steer = (dir: Dir) => {
+  if (live && state.pacmanControl === 'keyboard') state.keyDir = dir;
+};
+attachTouch(boardEl, dpad, steer, () => live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true);
 
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || typeof e.key !== 'string') return;
   if (e.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
   const dir = KEYS[e.key] ?? KEYS[e.key.toLowerCase()];
-  if (dir) {
-    if (!steer) return; // the recorded game takes no input
+  if (dir && live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true) {
     steer(dir);
     e.preventDefault();
     return;
   }
   if (e.repeat) return;
-  // Space/Enter on a focused control (button, link, field) do that control's own thing; elsewhere they press the
-  // overlay's button.
-  const onControl = e.target instanceof Element && e.target.closest('a, button, input, select, textarea, [contenteditable], [tabindex]') !== null;
-  if ((e.key === ' ' || e.key === 'Enter') && overlayAction && !onControl) {
-    e.preventDefault();
-    overlayAction();
+  const onControl = e.target instanceof Element && e.target.closest('a, button, input, select, textarea, summary, [tabindex]') !== null;
+  if ((e.key === ' ' || e.key === 'Enter') && !onControl) {
+    if (overlayAction) {
+      e.preventDefault();
+      overlayAction();
+    } else if (!live && overlayEl.hidden) {
+      e.preventDefault();
+      openPicker();
+    }
     return;
   }
-  if (e.key === 'Escape' && closeAction) {
-    closeAction();
-    return;
-  }
-  keyActions.get(e.key.toLowerCase())?.();
+  if (e.key === 'Escape' && picker) return closePicker();
+  const k = e.key.toLowerCase();
+  if (k === 'p') togglePause();
+  if (k === 'm') toggleSound();
 });
+
+// ---------- the leaderboard below ----------
+const NO_SUBMISSIONS: Community = { generatedAt: '', benchVersion: 0, entries: [] };
+void Promise.all([
+  fetch(appPath('/leaderboard.json')).then((r) => (r.ok ? (r.json() as Promise<Leaderboard>) : null)),
+  fetch(appPath('/community.json'))
+    .then((r) => (r.ok ? (r.json() as Promise<Community>) : NO_SUBMISSIONS))
+    .catch(() => NO_SUBMISSIONS),
+])
+  .then(([b, community]) => {
+    if (!b) return;
+    board = b;
+    renderLeaderboard(
+      $<HTMLTableElement>('#leaderboard-table'),
+      $('#leaderboard-sub'),
+      b,
+      community,
+      (model) => {
+        watch(model);
+        $('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+      (model) => offered.includes(model) || model === rec?.model,
+    );
+  })
+  .catch(() => {
+    $('#leaderboard-sub').textContent = 'The leaderboard could not be loaded. Try again in a moment.';
+  });
+
+// ---------- the frame loop ----------
+function tick(dt: number): void {
+  if (demo) {
+    for (const e of demo.advance(dt)) {
+      log.handle(e, playT);
+      if (e.type === 'decision') thinking.add(e.decision, performance.now());
+    }
+    state = demo.state;
+    if (state.status === 'playing') playT += dt;
+    return;
+  }
+  if (!live || gameOverShown) return;
+  clockMs += dt * 1000;
+  scheduler.update(state);
+  stats.beforeStep(state);
+  const heard = snapshot(state);
+  step(state, dt, controls);
+  stats.afterStep(state, dt);
+  if (state.status === 'playing') playT += dt;
+  for (const cue of cuesBetween(heard, state)) sound.play(cue);
+  if (state.status === 'gameover') gameOver();
+}
 
 const setText = (el: HTMLElement, text: string) => {
   if (el.textContent !== text) el.textContent = text;
 };
-
-function updateHud(): void {
-  const fruit = fruitForLevel(state.level);
-  setText(hud.score, String(state.score));
-  setText(hud.level, String(state.level));
-  setText(hud.lives, String(state.lives));
-  setText(hud.fruit, `${FRUIT_EMOJI[fruit.kind]} ${fruit.points}`);
-}
-
+let shownLives = -1;
 function frame(now: number): void {
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
   if (!paused) tick(dt);
   drawGame(ctx, state, now / 1000, paused);
-  if (state.status === 'playing') thinking.draw(ctx, now);
-  const steering = !demo && state.pacmanControl === 'keyboard' && overlayEl.hidden === true;
-  const showPad = touchScreen && steering;
-  if (dpad.hidden === showPad) dpad.hidden = !showPad;
+  if (state.status === 'playing' && !paused) thinking.draw(ctx, now);
+  log.observe(state, playT);
+  setText(scoreEl, state.score.toLocaleString('en-US'));
+  if (state.lives !== shownLives) {
+    shownLives = state.lives;
+    livesEl.replaceChildren(...Array.from({ length: Math.max(0, state.lives) }, () => Object.assign(document.createElement('span'), { className: 'pac' })));
+  }
+  const steering = live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true;
+  if (dpad.hidden === (touchScreen && steering)) dpad.hidden = !(touchScreen && steering);
   boardEl.classList.toggle('steering', steering);
-  panel.updateActors(state);
-  updateHud();
   requestAnimationFrame(frame);
 }
+
+// From an old "Watch Clef play" link (?pacman=…): straight to that model.
+const linked = new URLSearchParams(location.search).get('pacman');
+showRecording();
+if (linked && offered.includes(linked) && linked !== rec?.model) watch(linked);
 requestAnimationFrame(frame);
