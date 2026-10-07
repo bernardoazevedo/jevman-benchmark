@@ -120,7 +120,7 @@
 
       <section id="leaderboard" class="section" aria-labelledby="leaderboard-title">
         <div class="oc"><h2 id="leaderboard-title" class="font-wix font-semibold text-3xl md:text-4xl text-left md:text-center">Leaderboard</h2></div>
-        <p id="leaderboard-sub" class="sub">24 games per model against the classic ghosts.</p>
+        <p id="leaderboard-sub" class="sub">100 games per model against the classic ghosts.</p>
         <div class="tablecard"><div class="table-scroll"><table class="lbt" id="leaderboard-table"></table></div></div>
         <p class="foot">=1 means tied: those scores are within each other's margin of error.</p>
       </section>
@@ -154,7 +154,7 @@
       <section id="method" class="section" aria-labelledby="method-title">
         <div class="oc"><h2 id="method-title" class="font-wix font-semibold text-3xl md:text-4xl text-left md:text-center">Method</h2></div>
         <ul class="method">
-          <li>Each model plays Pac-Man against the classic scripted ghosts until it loses three lives or 5 minutes pass. 24 games per model.</li>
+          <li>Each model plays Pac-Man against the classic scripted ghosts until it loses three lives or 5 minutes pass. 100 games per model.</li>
           <li>At every junction the game asks the model one question, with the maze, pellets and ghosts as state. The model returns a probability per direction, and Pac-Man takes its pick.</li>
           <li>An answer that takes longer than 2 seconds is replaced by a simple backup rule, counted under backup moves.</li>
           <li>Scores are means with a 95% margin of error (±2 standard errors). Models within each other's margin are tied.</li>

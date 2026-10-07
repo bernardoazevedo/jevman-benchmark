@@ -169,7 +169,7 @@ npm run bench -- --endpoint http://localhost:8787 --submit submissions/my-model 
 npm run submissions
 ```
 
-The second command plays the leaderboard's 24 games and writes them to `submissions/my-model/`; the third checks them
+The second command plays 24 games (the minimum for a submission; add `--games 100` to match our runs) and writes them to `submissions/my-model/`; the third checks them
 the way CI will. Commit the folder and open a pull request: CI replays every game and checks its score. The request
 and answer format, the rules and what "self-reported" means are in
 [CONTRIBUTING.md](CONTRIBUTING.md#benchmark-your-own-model).
