@@ -174,6 +174,15 @@ the way CI will. Commit the folder and open a pull request: CI replays every gam
 and answer format, the rules and what "self-reported" means are in
 [CONTRIBUTING.md](CONTRIBUTING.md#benchmark-your-own-model).
 
+## Player high scores
+
+Games against AI ghosts count on a board per lineup (Mixed, and one per model on all four ghosts), top ten each.
+Signed-in players enter three initials; the page sends the game's recording and the server replays it with the
+game's own code (`src/player-check.ts`, bundled for the server by `vite build --ssr` into `dist-ssr`), so only the
+replay's score goes on a board. The boards live in memory and in one file on the server's disk
+(`JEV_HIGHSCORES_FILE`, else the system's temp folder): enough for the single task the service runs, but a
+redeploy starts them afresh until they move to a bucket.
+
 ## How decisions work
 
 When a character commits to a corridor its next junction is known, so the game asks jev about it
