@@ -125,7 +125,7 @@ main { display: block; padding-bottom: 96px; }
  * drawer opens below the card.
  */
 .tv {
-  --game: 460px; --log: 340px; --drawer-h: 420px;
+  --game: 460px; --log: 360px; --drawer-h: 420px;
   position: relative; width: calc(var(--game) + 24px); max-width: 100%;
   /* The arcade cabinet: black inside the maze's double blue wall, like the picker; the same in both themes. */
   border: 2px solid var(--j-maze); border-radius: 10px; padding: 10px; background: #000; color: #fff;
@@ -195,7 +195,7 @@ main { display: block; padding-bottom: 96px; }
 /* The marker's space is kept on every option, so switching never shifts them. */
 .side-log .seg button::before { content: '>'; margin-right: 4px; color: var(--j-arc-yellow); visibility: hidden; }
 .side-log .seg button[aria-pressed='true']::before { visibility: visible; }
-.side-log .close { border: 0; background: none; color: var(--j-arc-dim); font: 11px/1 var(--j-pixel); }
+.side-log .close { width: 20px; height: 24px; border: 0; background: none; color: var(--j-arc-dim); font: 11px/1 var(--j-pixel); }
 .side-log .close:hover { background: none; color: var(--j-arc-yellow); }
 .close { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--j-line); border-radius: 8px; background: var(--j-card); color: var(--j-muted); display: grid; place-items: center; font-size: 16px; line-height: 1; }
 .close:hover { color: var(--j-text); background: var(--j-soft); }
@@ -233,7 +233,7 @@ main { display: block; padding-bottom: 96px; }
 .side-log .ev.new { animation: ev-in-arc 420ms ease-out; }
 @keyframes ev-in-arc { from { background: rgba(255, 216, 0, 0.18); } }
 /* Too narrow for the drawer beside the card: the tab hangs from the card's bottom edge, and the drawer opens below. */
-@media (max-width: 1239px) {
+@media (max-width: 1279px) {
   .tv { margin-bottom: 30px; transition: margin-bottom 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .tv.log-open { margin-bottom: calc(var(--drawer-h) + 14px); }
   .drawer-tab { top: 100%; right: auto; left: 50%; transform: translate(-50%, -1px); writing-mode: horizontal-tb; padding: 8px 16px 9px; border: 2px solid var(--j-maze); border-top: 0; border-radius: 0 0 10px 10px; box-shadow: 0 10px 20px -14px rgba(0, 0, 0, 0.6); }
