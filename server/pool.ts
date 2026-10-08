@@ -203,7 +203,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 
 /** Text made only of the game's own words, numbers and punctuation: what the game's questions are written in. */
 export function gameText(text: unknown, max: number): boolean {
-  if (typeof text !== 'string' || text.length > max) return false;
+  // Printable ASCII only (and the dash in "FRUIT —"): other scripts would slip words past the vocabulary.
+  if (typeof text !== 'string' || text.length > max || /[^\x20-\x7E\u2014]/.test(text)) return false;
   for (const w of text.toLowerCase().match(/[a-z][a-z'-]*/g) ?? []) if (!GAME_WORDS.has(w.replace(/^[-']+|[-']+$/g, '')) && !GAME_WORDS.has(w.replace(/'s$/, ''))) return false;
   return true;
 }
@@ -241,6 +242,6 @@ export function poolAcceptsBody(raw: string): boolean {
   }
   if (!isObj(state) || !Array.isArray(state.maze) || state.maze.length > 40 || !state.maze.every((row) => typeof row === 'string' && MAZE_ROW.test(row))) return false;
   if (!Object.entries(state).every(([k, v]) => k === 'maze' || (k.length <= 32 && stateValue(v)))) return false;
-  if (keys !== undefined && (!isObj(keys) || Object.keys(keys).length > MAX_POOL_QUESTIONS || !Object.values(keys).every((k) => typeof k === 'string' && k.length <= 64))) return false;
+  if (keys !== undefined && (!isObj(keys) || Object.keys(keys).length > MAX_POOL_QUESTIONS || !Object.values(keys).every((k) => typeof k === 'string' && k.length <= 64 && /^[\x21-\x7E]+$/.test(k)))) return false;
   return true;
 }

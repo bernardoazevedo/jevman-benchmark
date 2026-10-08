@@ -19,6 +19,11 @@ export interface SchedulerDeps {
   now: () => number;
   onEvent: (e: SchedulerEvent) => void;
   timeoutMs?: number;
+  /**
+   * When the timeout starts: at send (the benchmark's rule, the default), or when the question was queued, so a
+   * question stuck behind slow requests also falls back in time (a player's game: no ghost waits much over 2 s).
+   */
+  timeoutFrom?: 'send' | 'queue';
   maxInFlight?: number;
   /**
    * The decision model for each character. Read on every request, so it can change mid-game. Without one (or when it
@@ -37,6 +42,7 @@ export interface SchedulerDeps {
 interface Pending {
   q: PendingQuestion;
   sentAt: number | null; // null = queued, waiting for a free slot
+  queuedAt: number;
   fruitOnBoard: boolean;
   /** Pac-Man's FRUIT route when the question was built; the answer is stale once that changes. */
   fruitRoute: Dir | null;
@@ -89,6 +95,7 @@ export class Scheduler implements Controls {
         this.pending.set(point.key, {
           q: { point, features },
           sentAt: null,
+          queuedAt: now,
           fruitOnBoard,
           fruitRoute: id === 'pacman' ? fruitRoute(state, point, features) : null,
         });
@@ -99,7 +106,8 @@ export class Scheduler implements Controls {
     for (const key of [...this.consumed]) if (!live.has(key)) this.consumed.delete(key);
 
     for (const [key, p] of [...this.pending]) {
-      if (p.sentAt !== null && now - p.sentAt > this.timeoutMs) this.resolve(key, fallbackDecision(state, p.q, 'timeout'), null);
+      const from = this.deps.timeoutFrom === 'queue' ? p.queuedAt : p.sentAt;
+      if (from !== null && now - from > this.timeoutMs) this.resolve(key, fallbackDecision(state, p.q, 'timeout'), null);
     }
 
     // One request per model: a System One request names a single model.

@@ -13,6 +13,7 @@ import { Scheduler } from './scheduler';
 import { createGame, fruitForLevel, jevActors, step, type Controls, type GameState } from './sim';
 import { cuesBetween, snapshot, Sound } from './sound';
 import { RECORDINGS, TOP_RECORDED_SCORE } from './recordings';
+import { checkPlayerGame } from './player-check';
 import { Recorder, roundDt, type Recording } from './replay';
 import { GameStats } from './stats';
 import { Thinking } from './thinking';
@@ -257,6 +258,8 @@ const newScheduler = (gameStats: GameStats) =>
     slots,
     // Four ghosts on four different models are four requests at once.
     maxInFlight: 4,
+    // A player's game: a question queued behind slow requests falls back in time too, so no ghost waits long.
+    timeoutFrom: 'queue',
     actors: jevActors,
     modelFor: (actor) => requestModel(choice, actor, defaultModel),
     now: () => clockMs,
@@ -648,6 +651,8 @@ function highScore(): { score: number; who: string } {
 /** HIGH SCORE, clicked: the players' boards over the board, opened on the lineup last picked; the game waits meanwhile. */
 function openScores(): void {
   if (picker || entryOpen || scoresOpen || !overlayEl.hidden) return;
+  watchToken += 1; // a recording still loading must not replace the boards when it arrives
+  setPlate();
   scoresOpen = true;
   held = true;
   dim(true);
@@ -699,6 +704,10 @@ function boardEntry(l: Lineup, score: number): BoardEntryOption | null {
   const place = placeFor(boards, key, score);
   const rec = recorder ? { ...recorder.finish(state, 'player', { pacmanControl: 'keyboard', ghostsByAI: true, lineup: l }), fixedStep: FIXED_STEP, steps: recSteps, final: { score: state.score, lives: state.lives, level: state.level, frames: recSteps } } : undefined;
   if (place === null || !rec) return null;
+  // The server's check, run here first (all but the signatures, which only the server can verify): a game it would
+  // refuse (the AIs answered too slowly too often) says so now, not after signing in.
+  const precheck = checkPlayerGame(rec, () => true);
+  if (!precheck.ok) return { kind: 'note', text: "The AIs answered too slowly too often this game, so it can't go on the board. Try another one!" };
   if (account.kind !== 'player') {
     return {
       kind: 'signin',

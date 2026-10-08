@@ -84,8 +84,9 @@ export function checkPlayerGame(raw: unknown, verify: AnswerVerifier): PlayerChe
         return entry.dir;
       },
     });
+    // Waiting counts only while the game runs (not through a lost life's or a cleared level's pause).
     for (const g of GHOST_IDS) {
-      waited[g] = state.ghosts[g].waiting ? waited[g] + fixedStep : 0;
+      waited[g] = state.status === 'playing' && state.ghosts[g].waiting ? waited[g] + fixedStep : state.status === 'playing' ? 0 : waited[g];
       if (waited[g] > MAX_WAIT_S) problem ??= 'a ghost waited longer than the game allows';
     }
   }

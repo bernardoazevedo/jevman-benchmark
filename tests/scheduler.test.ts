@@ -11,7 +11,7 @@ interface Call {
   reject: (e: Error) => void;
 }
 
-function harness(opts: { maxInFlight?: number; actors?: readonly ActorId[] | ((s: GameState) => readonly ActorId[]); modelFor?: (actor: ActorId) => ModelId } = {}) {
+function harness(opts: { maxInFlight?: number; timeoutFrom?: 'send' | 'queue'; actors?: readonly ActorId[] | ((s: GameState) => readonly ActorId[]); modelFor?: (actor: ActorId) => ModelId } = {}) {
   const calls: Call[] = [];
   const events: SchedulerEvent[] = [];
   const clock = { now: 0 };
@@ -133,6 +133,25 @@ describe('Scheduler', () => {
     await flush();
     expect(ofType(events, 'stale').map((e) => e.actor).sort()).toEqual(['blinky', 'pacman']);
   });
+
+  for (const timeoutFrom of ['send', 'queue'] as const) {
+    it(`times a queued question from when it was ${timeoutFrom === 'send' ? 'sent' : 'asked'} (timeoutFrom: ${timeoutFrom})`, async () => {
+      const { calls, events, clock, scheduler } = harness({ maxInFlight: 1, timeoutFrom });
+      const s = createGame();
+      scheduler.update(s);
+      Object.assign(s.ghosts.pinky, { state: 'normal', tile: { x: 13, y: 11 }, dir: 'left', progress: 0 });
+      scheduler.update(s);
+      clock.now = 1500;
+      calls[0].resolve(answerAll(calls[0].body));
+      await flush();
+      scheduler.update(s);
+      expect(Object.keys(calls[1].body.questions)).toEqual(['pinky']);
+      clock.now = 2001;
+      scheduler.update(s);
+      const pinky = ofType(events, 'decision').filter((e) => e.decision.actor === 'pinky');
+      expect(pinky.map((e) => e.decision.reason)).toEqual(timeoutFrom === 'queue' ? ['timeout'] : []);
+    });
+  }
 
   it('falls back and reports the error when the transport fails', async () => {
     const { calls, events, scheduler } = harness();

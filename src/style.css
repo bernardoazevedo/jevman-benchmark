@@ -140,7 +140,7 @@ main { display: block; padding-bottom: 96px; }
 .arcade-top .mid:hover small, .arcade-top .mid:focus-visible small { color: var(--j-arc-yellow); }
 .tv.scores-open .hi-tip { display: none; }
 /* The players' boards (from HIGH SCORE): tabs as arcade options, the AI's best pinned in yellow, then the board. */
-.hsc .hs-title { color: var(--j-arc-yellow); }
+.arc.hsc .hs-title { color: var(--j-arc-yellow); }
 .hsc .hs-body { display: grid; gap: 10px; }
 .arc .tobeat { margin: 0; display: flex; justify-content: space-between; gap: 10px; padding: 7px 8px; border: 1px dashed var(--j-arc-yellow); border-radius: 3px; font: 8px/1.5 var(--j-pixel); color: var(--j-arc-yellow); text-transform: uppercase; }
 /* Who holds the high score: an arcade tag above the cabinet, on hover or focus. */

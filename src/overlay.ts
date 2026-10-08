@@ -166,13 +166,14 @@ function initialsForm(submit: (initials: string) => Promise<string | null>): HTM
 export type BoardEntryOption =
   | { kind: 'enter'; board: string; place: number; submit: (initials: string) => Promise<{ error: string } | { place: number | null; entries: BoardEntry[] }> }
   | { kind: 'signin'; board: string; place: number; onSignIn: () => void }
-  | { kind: 'custom' };
+  | { kind: 'custom' }
+  | { kind: 'note'; text: string };
 
 /** The "you made the board" block: the place, then the initials form (or the way to sign in for it). */
 function boardBlock(o: BoardEntryOption): HTMLElement {
   const box = el('div', undefined, 'made');
-  if (o.kind === 'custom') {
-    box.append(el('p', 'Only the preset lineups have a high-score board, so pick one to compete.', 'tap'));
+  if (o.kind === 'custom' || o.kind === 'note') {
+    box.append(el('p', o.kind === 'note' ? o.text : 'Only the preset lineups have a high-score board, so pick one to compete.', 'tap'));
     return box;
   }
   const label = boardLabel(o.board);
@@ -237,7 +238,8 @@ export function showHighScores(root: HTMLElement, o: { boards: () => Boards | nu
         const b = el('button', boardLabel(k));
         b.type = 'button';
         b.setAttribute('role', 'tab');
-        b.setAttribute('aria-pressed', String(k === current));
+        b.setAttribute('aria-selected', String(k === current));
+        b.setAttribute('aria-pressed', String(k === current)); // the arcade options' marker style keys off this
         b.addEventListener('click', () => {
           current = k;
           render();
@@ -265,7 +267,7 @@ export function showHighScores(root: HTMLElement, o: { boards: () => Boards | nu
     body.replaceChildren(...parts);
   };
   render();
-  card.append(close, el('p', 'High scores', 'over-title hs-title'), el('p', 'Players against the AI ghosts, one board per lineup', 'tap'), tabs, body);
+  card.append(close, el('p', 'High scores', 'over-title hs-title'), el('p', 'Each lineup has its own board for players against the AI ghosts.', 'tap'), tabs, body);
   show(root, card, close);
   return { refresh: render };
 }
