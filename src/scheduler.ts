@@ -19,6 +19,11 @@ export interface SchedulerDeps {
   now: () => number;
   onEvent: (e: SchedulerEvent) => void;
   timeoutMs?: number;
+  /**
+   * When the timeout starts: at send (the benchmark's rule, the default), or when the question was queued, so a
+   * question stuck behind slow requests also falls back in time (a player's game: no ghost waits much over 2 s).
+   */
+  timeoutFrom?: 'send' | 'queue';
   maxInFlight?: number;
   /**
    * The decision model for each character. Read on every request, so it can change mid-game. Without one (or when it
@@ -37,6 +42,7 @@ export interface SchedulerDeps {
 interface Pending {
   q: PendingQuestion;
   sentAt: number | null; // null = queued, waiting for a free slot
+  queuedAt: number;
   fruitOnBoard: boolean;
   /** Pac-Man's FRUIT route when the question was built; the answer is stale once that changes. */
   fruitRoute: Dir | null;
@@ -53,6 +59,8 @@ export class Scheduler implements Controls {
   private readonly ready = new Map<string, { decision: Decision; fruitOnBoard: boolean; fruitRoute: Dir | null; model?: ModelId }>();
   /** Answers already handed to the sim whose question is still open (escape questions); never re-asked. */
   private readonly consumed = new Set<string>();
+  /** The decision the last `decide` handed out: a recorded game keeps its signature (or that it was a fallback). */
+  lastDecision: Decision | null = null;
   private readonly slots: { inFlight: number };
   private readonly timeoutMs: number;
   private readonly maxInFlight: number;
@@ -87,6 +95,7 @@ export class Scheduler implements Controls {
         this.pending.set(point.key, {
           q: { point, features },
           sentAt: null,
+          queuedAt: now,
           fruitOnBoard,
           fruitRoute: id === 'pacman' ? fruitRoute(state, point, features) : null,
         });
@@ -97,7 +106,8 @@ export class Scheduler implements Controls {
     for (const key of [...this.consumed]) if (!live.has(key)) this.consumed.delete(key);
 
     for (const [key, p] of [...this.pending]) {
-      if (p.sentAt !== null && now - p.sentAt > this.timeoutMs) this.resolve(key, fallbackDecision(state, p.q, 'timeout'), null);
+      const from = this.deps.timeoutFrom === 'queue' ? p.queuedAt : p.sentAt;
+      if (from !== null && now - from > this.timeoutMs) this.resolve(key, fallbackDecision(state, p.q, 'timeout'), null);
     }
 
     // One request per model: a System One request names a single model.
@@ -118,12 +128,14 @@ export class Scheduler implements Controls {
     if (!r) return null;
     this.ready.delete(point.key);
     let d = r.decision;
+    this.lastDecision = d;
     // Fruit can appear or expire inside the very step that reaches the junction, after the last update(), and
     // while Pac-Man waits for an answer the fruit can drift out of reach. Either way the answer is stale.
     const features = point.actor === 'pacman' && (r.fruitOnBoard || state.fruit) ? optionFeatures(state, point) : null;
     if (features && (r.fruitOnBoard !== (state.fruit !== null) || fruitRoute(state, point, features) !== r.fruitRoute)) {
       this.deps.onEvent({ type: 'superseded', decision: d });
       d = fallbackDecision(state, { point, features }, 'fruit changed');
+      this.lastDecision = d;
       this.deps.onEvent({ type: 'decision', decision: d, latencyMs: null, fruitOnBoard: state.fruit !== null });
     }
     if (!point.escape) return d.choice;
@@ -146,7 +158,7 @@ export class Scheduler implements Controls {
     this.slots.inFlight += 1;
     const isCurrent = (p: Pending) => this.pending.get(p.q.point.key) === p;
     this.deps
-      .transport({ ...(requested ? { model: requested } : {}), ...buildRequest(state, batch.map((p) => p.q)) })
+      .transport({ ...(requested ? { model: requested } : {}), ...buildRequest(state, batch.map((p) => p.q)), keys: Object.fromEntries(batch.map((p) => [questionName(p.q.point), p.q.point.key])) })
       .then(
         (res) => {
           const model = res.model ?? requested;
@@ -166,7 +178,8 @@ export class Scheduler implements Controls {
               continue;
             }
             const parsed = parseAnswer(res.answers[questionName(p.q.point)], p.q);
-            const decision = parsed ? { ...parsed, model } : fallbackDecision(state, p.q, 'invalid answer');
+            const sig = res.signatures?.[questionName(p.q.point)];
+            const decision = parsed ? { ...parsed, model, ...(sig && res.signedAs ? { sig, signedAs: res.signedAs } : {}) } : fallbackDecision(state, p.q, 'invalid answer');
             this.resolve(p.q.point.key, decision, res.latencyMs);
           }
         },

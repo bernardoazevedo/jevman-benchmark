@@ -169,7 +169,7 @@ describe('createJevMiddleware routing', () => {
     await vi.waitFor(() => expect(res.end).toHaveBeenCalled());
     expect(auth).toEqual(['Bearer op-player']);
     expect(res.statusCode).toBe(401);
-    expect(bodyOf(res)).toEqual({ error: 'Your Opper sign-in has expired — sign in again', signedOut: true });
+    expect(bodyOf(res)).toEqual({ error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true });
     expect(String(res.headers['Set-Cookie'])).toMatch(new RegExp(`^${SESSION_COOKIE}=; Max-Age=0`));
     expect(JSON.stringify(logger.info.mock.calls)).not.toContain('op-player');
   });

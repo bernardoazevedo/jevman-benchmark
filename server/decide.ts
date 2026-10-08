@@ -1,9 +1,24 @@
 import { clearSessionCookie, crossSite, header, json, sessionFrom, WALLET_URL, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
+import { signAnswers } from './answers.ts';
 import { endpointFor, modelFor, requestedModelFor, TYPESAFE_USD_PER_INPUT_TOKEN, type JevProvider, type JevTarget } from './jev.ts';
+import { clientIp, poolAcceptsBody, POOL_EMPTY_MESSAGE, type Pool, type VisitorLimits } from './pool.ts';
 import type { SessionData } from './session.ts';
 import { DEFAULT_MODEL, isModelId, modelName } from '../shared/models.ts';
 
 export const JEV_MODEL = modelFor('opper');
+
+/** Whose key pays: a signed-in player's, the free credits' (signed out), or the local one from .env. */
+export type KeyMode = 'player' | 'pool' | 'dev';
+
+/** The free credits and their fair-use limits, when OPPER_POOL_API_KEY is set. */
+export interface PoolAccess {
+  pool: Pool;
+  limits: VisitorLimits;
+  trustedProxies: number;
+}
+
+/** The answer that tells the page the free credits can't pay (any more): sign in to play on your own account. */
+const poolEmpty = (status: number): DecideResult => ({ status, body: { error: POOL_EMPTY_MESSAGE, signedOut: true, poolEmpty: true } });
 
 export interface DecideDeps {
   apiKey: string | undefined;
@@ -12,7 +27,7 @@ export interface DecideDeps {
   now: () => number;
   timeoutMs?: number;
   log?: (line: string) => void;
-  keyMode?: 'player' | 'dev';
+  keyMode?: KeyMode;
   /** Which System One API `baseUrl` points at (default Opper). */
   provider?: JevProvider;
 }
@@ -84,16 +99,18 @@ export async function handleDecide(input: unknown, deps: DecideDeps): Promise<De
       const error = redact(`${label} returned HTTP ${res.status}: ${upstreamMessage(redact(text))}`);
       log(`${tag} ${actors} failed after ${latencyMs} ms — ${error}`);
       if (deps.keyMode === 'player') {
-        if (res.status === 401) return { status: 401, body: { error: 'Your Opper sign-in has expired — sign in again', signedOut: true, clearSession: true } };
-        if (res.status === 402) return { status: 402, body: { error: 'Your Opper wallet is empty — top up to keep playing', walletUrl: WALLET_URL } };
+        if (res.status === 401) return { status: 401, body: { error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true, clearSession: true } };
+        if (res.status === 402) return { status: 402, body: { error: 'Your Opper wallet is empty. Top it up to keep playing.', walletUrl: WALLET_URL } };
       }
+      // The free credits ran out (or their key was revoked): the page asks the visitor to sign in.
+      if (deps.keyMode === 'pool' && (res.status === 401 || res.status === 402)) return poolEmpty(402);
       // The local key: a rejected key or an empty wallet won't fix itself either (no sign-in to redo, though).
       if (deps.keyMode === 'dev' && (res.status === 401 || res.status === 402)) {
         return { status: res.status, body: { error: res.status === 401 ? 'The API key in .env was rejected' : "The API key's Opper wallet is empty" } };
       }
       // Any key (a player's or the local one) can lack access to a listed model; that is not a passing upstream error.
       if (res.status === 403) {
-        const whose = deps.keyMode === 'player' ? 'your Opper account' : 'this API key';
+        const whose = deps.keyMode === 'player' ? 'your Opper account' : deps.keyMode === 'pool' ? 'the free credits' : 'this API key';
         return { status: 403, body: { error: `${label} is not enabled for ${whose}` } };
       }
       return { status: 502, body: { error } };
@@ -131,9 +148,13 @@ export async function handleDecide(input: unknown, deps: DecideDeps): Promise<De
   }
 }
 
-/** Where a decide call goes: the signed-in player's key (always via Opper), else the server's dev key, else nowhere. */
-export function resolveKey(session: SessionData | null, devKey: JevTarget | undefined, opperUrl: string): (JevTarget & { mode: 'player' | 'dev' }) | null {
+/**
+ * Where a decide call goes: the signed-in player's key (always via Opper), else the free credits while they last,
+ * else the server's dev key, else nowhere.
+ */
+export function resolveKey(session: SessionData | null, devKey: JevTarget | undefined, opperUrl: string, pool?: Pool): (JevTarget & { mode: KeyMode }) | null {
   if (session) return { provider: 'opper', apiKey: session.apiKey, baseUrl: opperUrl, mode: 'player' };
+  if (pool?.current().open) return { provider: 'opper', apiKey: pool.apiKey, baseUrl: opperUrl, mode: 'pool' };
   if (devKey) return { ...devKey, mode: 'dev' };
   return null;
 }
@@ -148,13 +169,28 @@ export interface DecideRequestDeps {
 /**
  * The answer to a /api/decide request that is refused before its body matters, or null to go ahead:
  * 405 for anything but POST, 403 cross-site, 415 unless JSON (a cross-site form can post text/plain
- * without a CORS preflight), and 401 `signedOut` when there is neither a session nor a dev key.
+ * without a CORS preflight), and 401 `signedOut` when there is neither a session nor a dev key, or 402 `poolEmpty`
+ * when the free credits would have paid but have run out.
  */
-export function rejectDecideRequest(req: HttpRequest, cfg: AuthConfig, devKey: JevTarget | undefined): HttpResponse | null {
+export function rejectDecideRequest(req: HttpRequest, cfg: AuthConfig, devKey: JevTarget | undefined, access?: PoolAccess): HttpResponse | null {
   if (req.method !== 'POST') return json(405, { error: 'POST only' }, [], { Allow: 'POST' });
   if (crossSite(req, cfg)) return json(403, { error: 'Cross-site request refused' });
   if (!header(req, 'content-type').toLowerCase().startsWith('application/json')) return json(415, { error: 'Expected application/json' });
-  if (!resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl)) return json(401, { error: 'Sign in with Opper to let the AI play', signedOut: true });
+  if (!resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl, access?.pool)) {
+    if (access) {
+      const r = poolEmpty(402);
+      return json(r.status, r.body);
+    }
+    return json(401, { error: 'Sign in with Opper to let the AI play', signedOut: true });
+  }
+  return null;
+}
+
+/** Fair use of the free credits, checked once per request before its body is read: 429 when a visitor sends faster than a game does. */
+export function poolLimitRequest(req: HttpRequest, cfg: AuthConfig, devKey: JevTarget | undefined, access: PoolAccess | undefined): HttpResponse | null {
+  if (!access || resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl, access.pool)?.mode !== 'pool') return null;
+  const verdict = access.limits.take(clientIp(req, access.trustedProxies));
+  if (verdict === 'rate') return json(429, { error: 'Too many requests for the free credits; slow down a little' }, [], { 'Retry-After': '1' });
   return null;
 }
 
@@ -169,10 +205,12 @@ const WARM_UP = { state: { note: 'warm-up' }, questions: { warmup: { type: 'choi
  * Set-Cookie. With `warm` it is /api/warm: one fixed tiny call with a long timeout, so a model that has been idle is
  * awake before it has to play.
  */
-export async function handleDecideRequest(req: HttpRequest, rawBody: string, cfg: AuthConfig, devKey: JevTarget | undefined, deps: DecideRequestDeps, opts: { warm?: boolean } = {}): Promise<HttpResponse> {
-  const refused = rejectDecideRequest(req, cfg, devKey);
+export async function handleDecideRequest(req: HttpRequest, rawBody: string, cfg: AuthConfig, devKey: JevTarget | undefined, deps: DecideRequestDeps, opts: { warm?: boolean } = {}, access?: PoolAccess): Promise<HttpResponse> {
+  const refused = rejectDecideRequest(req, cfg, devKey, access);
   if (refused) return refused;
-  const key = resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl)!;
+  const key = resolveKey(sessionFrom(req, cfg), devKey, cfg.opperUrl, access?.pool)!;
+  // The free credits pay only for what a real game sends (a warm-up's content is fixed below).
+  if (key.mode === 'pool' && !opts.warm && !poolAcceptsBody(rawBody)) return json(413, { error: 'That request is larger than a game sends' });
   const redact = (s: string) => [key.apiKey, devKey?.apiKey].reduce<string>((acc, k) => (k ? acc.split(k).join('[redacted]') : acc), s);
   try {
     let input: unknown = null;
@@ -196,6 +234,17 @@ export async function handleDecideRequest(req: HttpRequest, rawBody: string, cfg
       ...(opts.warm ? { timeoutMs: WARM_TIMEOUT_MS } : {}),
     });
     const { clearSession, ...body } = result.body as Record<string, unknown>;
+    // Sign each answer for its junction, ghost, direction and model: a high-score entry may only replay these.
+    if (!opts.warm && result.status === 200 && input && typeof input === 'object') {
+      const requested = (input as { model?: unknown; keys?: unknown }).model;
+      const model = typeof requested === 'string' ? requested : process.env.JEV_MODEL?.trim() || DEFAULT_MODEL;
+      body.signatures = signAnswers(cfg.sessionSecret, (input as { keys?: unknown }).keys, (body.answers ?? {}) as Record<string, unknown>, model);
+      body.signedAs = model;
+    }
+    if (key.mode === 'pool' && access) {
+      if (body.poolEmpty) access.pool.exhausted();
+      access.pool.spent(typeof body.costUsd === 'number' ? body.costUsd : null);
+    }
     return json(result.status, body, clearSession ? [clearSessionCookie(cfg)] : []);
   } catch (err) {
     deps.logError?.(`[jev] /api/${opts.warm ? 'warm' : 'decide'} failure: ${redact((err as Error)?.message ?? String(err))}`);

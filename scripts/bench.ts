@@ -77,7 +77,8 @@ const decide = (body: unknown, timeoutMs?: number) =>
 async function endpointDecide(body: unknown, timeoutMs = 2000): Promise<{ status: number; body: unknown }> {
   const t0 = performance.now();
   try {
-    const { model: _model, ...request } = body as Record<string, unknown>;
+    // Only the documented { state, questions } goes to a submitter's endpoint (keys are for signing on our server).
+    const { model: _model, keys: _keys, ...request } = body as Record<string, unknown>;
     const token = process.env.BENCH_ENDPOINT_TOKEN;
     const res = await fetch(values.endpoint!, {
       method: 'POST',

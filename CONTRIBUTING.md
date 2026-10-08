@@ -59,8 +59,8 @@ npm run bench -- --endpoint http://localhost:8787 --games 2
 npm run bench -- --endpoint http://localhost:8787 --submit submissions/my-model --name "My Model" --by your-github-handle --url https://example.com/my-model
 ```
 
-This plays the leaderboard's games: 24 games, each to game over or 300 seconds, against the scripted ghosts, 4 at a
-time (change that with `--parallel`). It writes `submissions/my-model/`, holding `submission.json` and one
+This plays 24 games, the minimum for a submission (our own runs play 100), each to game over or 300 seconds, against
+the scripted ghosts, 4 at a time (change that with `--parallel`). It writes `submissions/my-model/`, holding `submission.json` and one
 `game-NN.json.gz` per game. The folder name is your model's id: lowercase letters, digits and dashes.
 
 Check it the way CI will:

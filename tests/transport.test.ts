@@ -54,6 +54,18 @@ describe('createHttpTransport hooks', () => {
     expect(onWalletEmpty).not.toHaveBeenCalled();
   });
 
+  it('reports used-up free credits as such, not as a signed-out player', async () => {
+    const onSignedOut = vi.fn();
+    const onPoolEmpty = vi.fn();
+    stub(json({ error: 'The free credits are used up.', signedOut: true, poolEmpty: true }, 402));
+    await expect(createHttpTransport({ onSignedOut, onPoolEmpty })(req)).rejects.toThrow('free credits');
+    expect(onPoolEmpty).toHaveBeenCalledOnce();
+    expect(onSignedOut).not.toHaveBeenCalled();
+    stub(json({ error: 'The free credits are used up.', signedOut: true, poolEmpty: true }, 402));
+    expect(await warmUp('opper/clef', { onSignedOut, onPoolEmpty })).toMatchObject({ ok: false, account: true });
+    expect(onPoolEmpty).toHaveBeenCalledTimes(2);
+  });
+
   it('reports an empty wallet once, and only that', async () => {
     const onSignedOut = vi.fn();
     const onWalletEmpty = vi.fn();
@@ -92,10 +104,10 @@ describe('warmUp', () => {
   it('reports an expired sign-in or an empty wallet through the same hooks as a game call', async () => {
     const onSignedOut = vi.fn();
     const onWalletEmpty = vi.fn();
-    stub(async () => new Response(JSON.stringify({ error: 'Your Opper sign-in has expired — sign in again', signedOut: true }), { status: 401 }));
-    expect(await warmUp('opper/clef', { onSignedOut, onWalletEmpty })).toEqual({ ok: false, error: 'Your Opper sign-in has expired — sign in again', account: true });
+    stub(async () => new Response(JSON.stringify({ error: 'Your Opper sign-in has expired. Sign in again to keep playing.', signedOut: true }), { status: 401 }));
+    expect(await warmUp('opper/clef', { onSignedOut, onWalletEmpty })).toEqual({ ok: false, error: 'Your Opper sign-in has expired. Sign in again to keep playing.', account: true });
     expect(onSignedOut).toHaveBeenCalledOnce();
-    stub(async () => new Response(JSON.stringify({ error: 'Your Opper wallet is empty — top up to keep playing', walletUrl: 'https://platform.opper.ai/wallet' }), { status: 402 }));
+    stub(async () => new Response(JSON.stringify({ error: 'Your Opper wallet is empty. Top it up to keep playing.', walletUrl: 'https://platform.opper.ai/wallet' }), { status: 402 }));
     expect(await warmUp('opper/clef', { onSignedOut, onWalletEmpty })).toMatchObject({ ok: false, account: true });
     expect(onWalletEmpty).toHaveBeenCalledWith('https://platform.opper.ai/wallet');
   });

@@ -53,6 +53,15 @@ describe('fetchMe', () => {
     }
   });
 
+  it('reads the free credits: playing on them while open, signed out once empty', async () => {
+    reply({ mode: 'pool', walletUrl: WALLET, loginAvailable: true, pool: { open: true, remainingUsd: 84.12 } });
+    expect(await fetchMe()).toMatchObject({ mode: 'pool', pool: { open: true, remainingUsd: 84.12 } });
+    reply({ mode: 'none', walletUrl: WALLET, loginAvailable: true, pool: { open: false, remainingUsd: -1 } });
+    expect(await fetchMe()).toMatchObject({ mode: 'none', pool: { open: false, remainingUsd: 0 } });
+    reply({ mode: 'pool', walletUrl: WALLET, loginAvailable: true, pool: { open: true, remainingUsd: 'lots' } });
+    expect((await fetchMe()).pool).toEqual({ open: true, remainingUsd: null });
+  });
+
   it('keeps the models the key can use and the server default, ignoring anything malformed', async () => {
     reply({ mode: 'dev', walletUrl: WALLET, loginAvailable: true, defaultModel: 'opper/clef', models: ['typesafe/jev-1.13.0', 7, 'opper/clef', ''] });
     expect(await fetchMe()).toMatchObject({ defaultModel: 'opper/clef', models: ['typesafe/jev-1.13.0', 'opper/clef'] });
@@ -96,7 +105,7 @@ describe('accountNotice', () => {
   });
 
   it('says the server could not be reached when /api/me failed', () => {
-    expect(accountNotice(me({ unavailable: true }), null, true)).toBe("Couldn't reach the server — showing the recorded demo");
+    expect(accountNotice(me({ unavailable: true }), null, true)).toBe("Couldn't reach the server, so this is the recorded demo");
     expect(accountNotice(me({ unavailable: true }), null, false)).toBe("Couldn't reach the server");
   });
 
@@ -109,7 +118,7 @@ describe('accountNotice', () => {
 describe('walletNotice', () => {
   it('asks the player to top up, linking to the wallet', () => {
     expect(walletNotice('https://platform.opper.ai/wallet?x=1')).toEqual({
-      notice: 'Your Opper wallet is empty — top up to keep playing',
+      notice: 'Your Opper wallet is empty. Top it up to keep playing.',
       noticeLink: 'https://platform.opper.ai/wallet?x=1',
     });
   });

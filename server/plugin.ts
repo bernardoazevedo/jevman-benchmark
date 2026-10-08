@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite';
 import { mountAt, normalizeBasePath } from './base-path.ts';
-import { createJevMiddleware } from './routes.ts';
+import { createJevMiddleware, type PlayerCheck } from './routes.ts';
 
 /** The production server's clean URL for the leaderboard page (`base` is APP_BASE_PATH, '' at the root). */
 export function cleanUrls(req: { url?: string }, _res: unknown, next: () => void, base = ''): void {
@@ -15,7 +15,9 @@ export function jevPlugin(env: Record<string, string>, opts: { quiet?: boolean }
   return {
     name: 'jev-decide',
     configureServer(server) {
-      server.middlewares.use(mountAt(base, createJevMiddleware(env, server.config.logger, opts)));
+      // The high-score check runs the game's own code, loaded through Vite here (the production server uses the --ssr bundle).
+      const loadPlayerCheck = () => server.ssrLoadModule('/src/player-check.ts').then((m) => m.checkPlayerGame as PlayerCheck);
+      server.middlewares.use(mountAt(base, createJevMiddleware(env, server.config.logger, { ...opts, loadPlayerCheck })));
       server.middlewares.use(clean);
     },
     configurePreviewServer(server) {

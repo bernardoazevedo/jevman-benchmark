@@ -24,12 +24,21 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, t: num
   }
   for (const p of state.popups) drawText(ctx, p.text, p.tile.x, p.tile.y, '#00ffff', 11);
   const banner = { ready: ['READY!', '#ffd800'], gameover: ['GAME OVER', '#ff0000'], levelclear: ['LEVEL CLEAR', '#ffffff'] } as const;
-  if (state.status in banner) {
+  if (paused) {
+    // In the arcade's own lettering, dead centre: the board dims, and a patch of black keeps the walls out of the text.
+    const cx = ctx.canvas.width / 2;
+    const cy = ctx.canvas.height / 2;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(cx - 4 * TILE, cy - 1.4 * TILE, 8 * TILE, 2.8 * TILE);
+    drawText(ctx, 'PAUSED', cx / TILE - 0.5, cy / TILE - 0.5 - 0.45, '#ffd800', 16);
+    drawText(ctx, 'click to resume', cx / TILE - 0.5, cy / TILE - 0.5 + 0.65, '#ffffff', 10);
+  } else if (state.status in banner) {
     const [text, color] = banner[state.status as keyof typeof banner];
     drawText(ctx, text, FRUIT_TILE.x + 0.5, FRUIT_TILE.y, color, 16);
     if (state.status === 'gameover') drawText(ctx, 'press R to restart', FRUIT_TILE.x + 0.5, FRUIT_TILE.y + 1.5, '#ffffff', 10);
   }
-  if (paused) drawText(ctx, 'PAUSED', FRUIT_TILE.x + 0.5, FRUIT_TILE.y - 3, '#ffffff', 16);
 }
 
 function drawMaze(ctx: CanvasRenderingContext2D, state: GameState, t: number): void {

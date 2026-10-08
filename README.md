@@ -1,19 +1,20 @@
 # jevman
 
-Pac-Man where the characters are driven by System One decision models: TypeSafe's jev
-(`typesafe/jev-1.13.0`, the default) and the others Opper serves, called through Opper or (jev only)
-straight from TypeSafe. The main thing is to **watch an AI play**: press Play, pick a model with one click
-(jev by default) and watch it play Pac-Man against the classic arcade ghosts. Below that are more ways to play:
-**Beat the AI** (free, no sign-in: you against the classic ghosts, the same game the models played for the
-leaderboard; game over tells you which AIs you beat, with a Share button and your personal best), **Play against AI
-ghosts** (you steer, a model plays the ghosts) and **AI vs AI** (models on both sides). `J` hands Pac-Man to the AI
-or takes him back during a game.
-`npm run leaderboard` measures which model plays best, and you can [add your own](#benchmark-your-own-model). While a model plays, its odds are drawn on the
-board at each junction.
+A Pac-Man benchmark for decision models: System One models (TypeSafe's jev, `typesafe/jev-1.13.0`, and the others
+Opper serves) steer Pac-Man in real time against the classic arcade ghosts, and `npm run leaderboard` measures which
+plays best. You can [add your own](#benchmark-your-own-model).
 
-The side panel shows each decision with its probabilities, confidence, latency, the model that made
-it and the running cost. Red entries were not the model's own choice: greedy fallbacks used when it
-could not answer (timeout, error or invalid answer; see
+The page opens on jev's recorded benchmark game, with the leaderboard and the method below it. Two things to do:
+
+- **Play against the AIs**: you steer Pac-Man and AI models play the four ghosts, one model each (Mixed: Clef, jev,
+  Kev and GPT-6 Luna) or all the same one; tap a ghost to switch its model. A model that doesn't wake up in time is
+  stood in for by an awake one, so the game still starts. Signed out, this runs on the [free credits](#option-d--free-credits-for-everyone-the-hosted-page)
+  while they last; when they are used up, the classic ghosts stay free.
+- **Watch**: the chips under the board play jev's recording, or any other model live.
+
+While a model plays, its odds are drawn on the board at each junction. The activity log under the board (folded by
+default) lists every decision with its odds, the other options and the latency, plus deaths, ghosts eaten and fruit;
+backup moves are the greedy rule standing in when a model could not answer in time (see
 [How decisions work](#how-decisions-work)).
 
 Play it at <https://opper.ai/jevman-benchmark/>. Source: <https://github.com/opper-ai/jevman-benchmark>, which
@@ -64,11 +65,27 @@ https deployments unless `JEV_ALLOW_DEV_KEY=1`. `npm run smoke` and `npm run ben
 This is also the easiest way to play jevman without an Opper account: clone the repo, add your
 TypeSafe key, `npm run dev`. The hosted page links here from its header, under "Sign in with Opper".
 
+### Option D — free credits for everyone (the hosted page)
+
+Set `OPPER_POOL_API_KEY` to an Opper API key whose money is meant for visitors. Signed-out visitors then play every
+mode on it, with no sign-in, until its balance runs out; the page header shows what is left (`$84.12 free credits`),
+where a signed-in player's name goes. Once it is empty, the page asks visitors to sign in and play on their own
+Opper account, as before. There is nothing to manage here: the key's organization balance *is* the pool, so give the
+key its own Opper organization and top that up whenever you like. The server reads the balance from Opper
+(`GET /v3/me`, every 30 s, and subtracts each call's cost in between), and Opper itself stops the key at zero.
+
+The pool pays only for what a game sends: requests of at most 16 KB and five questions, and at most 8 a second per
+visitor (a game against four AI ghosts makes about 4), so a script can't drain it in minutes. Visitors are told apart by
+IP address; behind proxies that append to `X-Forwarded-For`, set `JEV_TRUSTED_PROXIES` to how many (default `2` in
+production: CloudFront and the load balancer, else `0`). The rate limit is kept in memory per server; the balance is
+the hard limit.
+
 ### Which key is used
 
-A signed-in Login-with-Opper player always plays on their own key, through Opper. Otherwise the
-server uses `TYPESAFE_API_KEY` if set, else `OPPER_API_KEY`. Variables exported in your shell take
-precedence over `.env`. The account area in the page header says which one is in use.
+A signed-in Login-with-Opper player always plays on their own key, through Opper. Otherwise the free credits
+(`OPPER_POOL_API_KEY`) pay while they last, and then the server's local key: `TYPESAFE_API_KEY` if set, else
+`OPPER_API_KEY`. Variables exported in your shell take precedence over `.env`. The account area in the page header
+says which one is in use.
 
 ### Another model
 
@@ -152,10 +169,19 @@ npm run bench -- --endpoint http://localhost:8787 --submit submissions/my-model 
 npm run submissions
 ```
 
-The second command plays the leaderboard's 24 games and writes them to `submissions/my-model/`; the third checks them
+The second command plays 24 games (the minimum for a submission; add `--games 100` to match our runs) and writes them to `submissions/my-model/`; the third checks them
 the way CI will. Commit the folder and open a pull request: CI replays every game and checks its score. The request
 and answer format, the rules and what "self-reported" means are in
 [CONTRIBUTING.md](CONTRIBUTING.md#benchmark-your-own-model).
+
+## Player high scores
+
+Games against AI ghosts count on a board per lineup (Mixed, and one per model on all four ghosts), top ten each.
+Signed-in players enter three initials; the page sends the game's recording and the server replays it with the
+game's own code (`src/player-check.ts`, bundled for the server by `vite build --ssr` into `dist-ssr`), so only the
+replay's score goes on a board. The boards live in memory and in one file on the server's disk
+(`JEV_HIGHSCORES_FILE`, else the system's temp folder): enough for the single task the service runs, but a
+redeploy starts them afresh until they move to a bucket.
 
 ## How decisions work
 
@@ -197,7 +223,8 @@ Settings, all optional (empty serves the app at the root, as for local developme
   `OPPER_OAUTH_REDIRECT_URI`; set `JEVMAN_ALLOW_HTTP=1` to try a production build over plain http.
 
 Secrets live in SSM Parameter Store under `/opper/eu-north/jevman-benchmark/` (`OPPER_CLIENT_ID`,
-`OPPER_CLIENT_SECRET`, `SESSION_SECRET`). The image's entrypoint is Opper's
+`OPPER_CLIENT_SECRET`, `SESSION_SECRET`, and `OPPER_POOL_API_KEY` for the [free credits](#option-d--free-credits-for-everyone-the-hosted-page)).
+A new parameter reaches the app when its tasks next start (a deploy, or forcing a new deployment of the service). The image's entrypoint is Opper's
 [loadsecrets](https://github.com/opper-ai/opper-secrets), which exports every parameter under `OPPER_SSM_PREFIXES`
 into the environment and then starts the server; run the image elsewhere with `OPPER_SSM_PREFIXES='[]'` to skip SSM.
 The loadsecrets image is private, so building the image locally needs `docker login ghcr.io`

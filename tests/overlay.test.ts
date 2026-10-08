@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { chipsPick, isClassic, OTHER_GAMES, titleFor, WATCH } from '../src/overlay';
+import { defaultLineup, lineupNames, nextModel, presets } from '../src/overlay';
 
-describe('the Play card', () => {
-  it('puts watching a model against the classic ghosts first, and offers the other three games below', () => {
-    expect(titleFor(WATCH)).toBe('Watch an AI play');
-    expect(OTHER_GAMES.map((g) => titleFor(g.sides))).toEqual(['Beat the AI', 'Play against an AI', 'AI vs AI']);
-    const all = [WATCH, ...OTHER_GAMES.map((g) => g.sides)].map((s) => `${s.pacman}/${s.ghosts}`);
-    expect(new Set(all).size).toBe(4);
+const ALL = ['typesafe/jev-1.13.0', 'opper/clef', 'opper/clef-flash', 'opper/kev-4b', 'berget/convaiinnovations/laya', 'openai/gpt-6-luna-decisions'];
+
+describe('who plays the ghosts', () => {
+  it('starts mixed: a different AI behind each ghost', () => {
+    expect(defaultLineup(ALL)).toEqual({ blinky: 'opper/clef', pinky: 'typesafe/jev-1.13.0', inky: 'opper/kev-4b', clyde: 'openai/gpt-6-luna-decisions' });
+    expect(lineupNames(defaultLineup(ALL))).toBe('Clef, jev, Kev and GPT-6 Luna');
   });
 
-  it('lets the model chips pick the AI of each game', () => {
-    expect(chipsPick(WATCH)).toBe('pacman');
-    expect(chipsPick({ pacman: 'ai', ghosts: 'ai' })).toBe('pacman');
-    expect(chipsPick({ pacman: 'you', ghosts: 'ai' })).toBe('ghosts');
-    expect(chipsPick({ pacman: 'you', ghosts: 'classic' })).toBeNull();
+  it('offers Mixed and one model for all four ghosts, only with models the key can use', () => {
+    expect(presets(ALL).map((p) => p.label)).toEqual(['Mixed', 'All jev', 'All Clef', 'All Kev', 'All GPT-6 Luna']);
+    expect(presets(['typesafe/jev-1.13.0']).map((p) => p.label)).toEqual(['All jev']);
+    expect(defaultLineup(['typesafe/jev-1.13.0'])).toEqual({ blinky: 'typesafe/jev-1.13.0', pinky: 'typesafe/jev-1.13.0', inky: 'typesafe/jev-1.13.0', clyde: 'typesafe/jev-1.13.0' });
+    expect(lineupNames(defaultLineup(['typesafe/jev-1.13.0']))).toBe('jev');
   });
 
-  it('counts only you against the classic ghosts as the free, leaderboard game', () => {
-    expect(isClassic({ pacman: 'you', ghosts: 'classic' })).toBe(true);
-    expect(isClassic(WATCH)).toBe(false);
+  it('switches a tapped ghost to the next model, round the list', () => {
+    expect(nextModel('typesafe/jev-1.13.0', ALL)).toBe('opper/clef');
+    expect(nextModel('openai/gpt-6-luna-decisions', ALL)).toBe('typesafe/jev-1.13.0');
   });
 });
