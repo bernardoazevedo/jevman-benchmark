@@ -1,7 +1,7 @@
 import type { Leaderboard } from '../shared/leaderboard';
 import { boardOf } from '../shared/lineups';
 import { boardLabel, type BoardEntry, type Boards } from './highscores';
-import { modelName } from '../shared/models';
+import { isModelId, modelName } from '../shared/models';
 import { logoFor } from './logos';
 import type { GameSummary } from './stats';
 import { GHOST_IDS, type GhostId } from './types';
@@ -21,7 +21,20 @@ const SOLO = ['typesafe/jev-1.13.0', 'opper/clef', 'opper/kev-4b', 'openai/gpt-6
 
 const allOf = (model: string): Lineup => Object.fromEntries(GHOST_IDS.map((g) => [g, model])) as Lineup;
 const sameLineup = (a: Lineup, b: Lineup) => GHOST_IDS.every((g) => a[g] === b[g]);
-const short = (model: string) => modelName(model).replace(/ 1\.13$/, '').replace(/ 4B$/, '');
+export function shortenModelName(model: string, maxLen = 14): string {
+  let name = modelName(model).replace(/ 1\.13$/, '').replace(/ 4B$/, '');
+  if (isModelId(model)) return name;
+  if (name.includes('/')) name = name.split('/').pop()!;
+  if (name.includes(':')) {
+    const [base, tag] = name.split(':');
+    const cleanTag = tag ? tag.split('-')[0] : '';
+    const candidate = cleanTag ? `${base}:${cleanTag}` : base;
+    return candidate.length <= maxLen ? candidate : base.length <= maxLen ? base : base.slice(0, maxLen - 1) + '…';
+  }
+  return name.length > maxLen ? `${name.slice(0, maxLen - 1)}…` : name;
+}
+
+const short = (model: string) => shortenModelName(model, 14);
 
 /** The presets the picker offers, limited to the models this key can use. */
 export function presets(offered: string[]): { key: string; label: string; lineup: Lineup }[] {
@@ -29,6 +42,11 @@ export function presets(offered: string[]): { key: string; label: string; lineup
   const out: { key: string; label: string; lineup: Lineup }[] = [];
   if (GHOST_IDS.every((g) => has(MIXED[g]))) out.push({ key: 'mixed', label: 'Mixed', lineup: MIXED });
   for (const m of SOLO) if (has(m)) out.push({ key: m, label: `All ${short(m)}`, lineup: allOf(m) });
+  for (const m of offered) {
+    if (!SOLO.includes(m) && !isModelId(m) && !out.some((p) => sameLineup(p.lineup, allOf(m)))) {
+      out.push({ key: m, label: `All ${short(m)}`, lineup: allOf(m) });
+    }
+  }
   return out;
 }
 
@@ -245,7 +263,7 @@ export function showHighScores(root: HTMLElement, o: { boards: () => Boards | nu
 }
 
 /** A model's name on the arcade roster: short, and GPT-6 Luna as just Luna (its logo says OpenAI). */
-const rosterName = (model: string) => short(model).replace(/^GPT-6 /, '');
+const rosterName = (model: string) => shortenModelName(model, 11).replace(/^GPT-6 /, '');
 
 /**
  * "Who plays the ghosts?", as the arcade's attract screen: one line per ghost in its colour, dotted across to its
@@ -276,6 +294,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
         b.type = 'button';
         b.style.setProperty('--gc', ARCADE_FILL[g]);
         b.setAttribute('aria-label', `${GHOST_NAMES[g]}: ${modelName(lineup[g])}. Switch model`);
+        b.title = `${GHOST_NAMES[g]}: ${modelName(lineup[g])} (tap to switch)`;
         const md = el('span', undefined, 'md');
         const logo = logoFor(lineup[g]);
         if (logo) md.append(logo);

@@ -13,7 +13,7 @@ export interface ModelInfo {
 const STORAGE_KEY = 'jevman.models';
 
 export function modelOptions(me: ModelInfo): { id: string; label: string }[] {
-  const listed = (me.models ?? [DEFAULT_MODEL]).filter(isModelId).map((id) => ({ id, label: modelName(id) }));
+  const listed = (me.models ?? [DEFAULT_MODEL]).map((id) => ({ id, label: isModelId(id) ? modelName(id) : id }));
   const def = me.defaultModel ?? DEFAULT_MODEL;
   // An operator's JEV_MODEL may name a System One model that isn't on the shared list.
   return listed.some((o) => o.id === def) ? listed : [{ id: def, label: `${def} (server default)` }, ...listed];
@@ -32,7 +32,7 @@ export const setGhosts = (choice: ModelChoice, model: string): ModelChoice => ({
 /** The model to name in a request: none for the server default, so JEV_MODEL keeps applying. */
 export const requestModel = (choice: ModelChoice, actor: ActorId, defaultModel: string): ModelId | undefined => {
   const model = choice[actor];
-  return model === defaultModel || !isModelId(model) ? undefined : model;
+  return model === defaultModel ? undefined : (model as ModelId);
 };
 
 

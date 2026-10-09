@@ -70,15 +70,17 @@ export async function handleDecide(input: unknown, deps: DecideDeps): Promise<De
   const timeoutMs = deps.timeoutMs ?? 2000;
   if (!deps.apiKey) return { status: 500, body: { error: 'No TYPESAFE_API_KEY or OPPER_API_KEY in .env — all decisions are fallbacks' } };
   if (!isDecideInput(input)) return { status: 400, body: { error: 'Expected { state, questions } with at least one question' } };
-  // A model the game asks for must be on the shared list; without one, the server's default (JEV_MODEL or jev).
+  // A model the game asks for must be on the shared list or match the server's default; without one, the server's default (JEV_MODEL or jev).
   const requested = input.model ?? undefined;
-  if (requested !== undefined && !isModelId(requested)) {
+  const configuredDefault = modelFor(provider);
+  const isValidModel = (m: unknown): boolean => isModelId(m) || (typeof m === 'string' && (provider === 'typesafe' || m === configuredDefault));
+  if (requested !== undefined && !isValidModel(requested)) {
     return { status: 400, body: { error: `Unknown decision model: ${typeof requested === 'string' ? requested.slice(0, 80) : typeof requested}` } };
   }
-  const model = requested === undefined ? modelFor(provider) : requestedModelFor(provider, requested);
+  const model = requested === undefined ? configuredDefault : requestedModelFor(provider, requested as string);
   if (model === null) return { status: 400, body: { error: `A TypeSafe key only reaches jev; ${requested} needs an Opper key` } };
   // For logs and errors: TypeSafe's own id for jev reads as the listed model.
-  const label = modelName(requested ?? (model === requestedModelFor('typesafe', DEFAULT_MODEL) ? DEFAULT_MODEL : model));
+  const label = modelName((typeof requested === 'string' ? requested : undefined) ?? (model === requestedModelFor('typesafe', DEFAULT_MODEL) ? DEFAULT_MODEL : model));
 
   const actors = `${Object.keys(input.questions).join(',')}${model === modelFor(provider, {}) ? '' : ` (${model})`}`;
   const started = deps.now();

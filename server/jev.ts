@@ -1,4 +1,4 @@
-import { DECISION_MODELS, DEFAULT_MODEL, type ModelId } from '../shared/models.ts';
+import { DECISION_MODELS, DEFAULT_MODEL, isModelId, type ModelId } from '../shared/models.ts';
 
 /** Where jev calls go: Opper's TypeSafe-compatible endpoint, or TypeSafe's own System One API. */
 export type JevProvider = 'opper' | 'typesafe';
@@ -26,13 +26,32 @@ const DEFAULTS: Record<JevProvider, string> = { opper: DEFAULT_MODEL, typesafe: 
 export const modelFor = (provider: JevProvider, env: Record<string, string | undefined> = process.env): string =>
   env.JEV_MODEL?.trim() || DEFAULTS[provider];
 
-/** The id to send for a model the game asked for (one of shared/models.ts). TypeSafe's own API only serves jev. */
-export function requestedModelFor(provider: JevProvider, model: ModelId): string | null {
+/** The id to send for a model the game asked for (one of shared/models.ts, or a local model). TypeSafe's own API serves jev or local models. */
+export function requestedModelFor(provider: JevProvider, model: string, env: Record<string, string | undefined> = process.env): string | null {
   if (provider === 'opper') {
     const listed: { id: string; opper?: string } | undefined = DECISION_MODELS.find((m) => m.id === model);
-    return listed?.opper ?? model;
+    return listed?.opper ?? (isModelId(model) ? model : null);
   }
-  return model === DEFAULT_MODEL ? DEFAULTS.typesafe : null;
+  if (isModelId(model) && model !== DEFAULT_MODEL) {
+    return null;
+  }
+  const defaultModel = modelFor('typesafe', env);
+  if (model === DEFAULT_MODEL || model === defaultModel || model === 'typesafe') {
+    return defaultModel;
+  }
+  return model;
+}
+
+/** Queries an Ollama / local endpoint for available models via GET /api/tags. */
+export async function listLocalModels(baseUrl: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/tags`, { signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { models?: Array<{ name?: string }> };
+    return (data.models ?? []).map((m) => m.name).filter((n): n is string => typeof n === 'string' && n.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 export const endpointFor = (t: JevTarget): string => `${t.baseUrl.replace(/\/+$/, '')}${PATHS[t.provider]}`;

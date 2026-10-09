@@ -10,6 +10,9 @@ export function cleanUrls(req: { url?: string }, _res: unknown, next: () => void
 
 /** Mounts the jev routes (Login with Opper, /api/me, /api/decide) on the Vite dev and preview servers, below APP_BASE_PATH. */
 export function jevPlugin(env: Record<string, string>, opts: { quiet?: boolean } = {}): Plugin {
+  for (const [k, v] of Object.entries(env)) {
+    if (process.env[k] === undefined && v !== undefined) process.env[k] = v;
+  }
   const base = normalizeBasePath(env.APP_BASE_PATH);
   const clean = (req: { url?: string }, res: unknown, next: () => void) => cleanUrls(req, res, next, base);
   return {

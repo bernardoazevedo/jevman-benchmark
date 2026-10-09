@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { crossSite, handleCallback, handleLogin, handleLogout, handleMe, json, loginConfigured, opperExchange, redirect, sessionFrom, type AuthConfig, type HttpRequest, type HttpResponse } from './auth.ts';
 import { normalizeBasePath } from './base-path.ts';
 import { handleDecideRequest, poolLimitRequest, rejectDecideRequest, resolveKey, type PoolAccess } from './decide.ts';
-import { devTargetFromEnv, type JevTarget } from './jev.ts';
+import { devTargetFromEnv, listLocalModels, type JevTarget } from './jev.ts';
 import { answerVerifier } from './answers.ts';
 import { accountHash, cleanInitials, HighScores, highScoresStore, visitorHash } from './highscores.ts';
 import { clientIp, MAX_POOL_BODY_BYTES, poolFromEnv, trustedProxiesFromEnv, visitorKey, VisitorLimits } from './pool.ts';
@@ -173,6 +173,25 @@ export function createJevMiddleware(env: Record<string, string>, logger: RouteLo
   const checking = new Set<string>();
   const verifyAnswer = answerVerifier(cfg.sessionSecret);
   const trustedProxies = trustedProxiesFromEnv(env);
+  let localModels: string[] | undefined = undefined;
+  let lastModelsFetch = 0;
+  const getAvailableModels = async (): Promise<string[] | undefined> => {
+    if (devKey?.provider !== 'typesafe') return undefined;
+    const now = Date.now();
+    if (localModels && now - lastModelsFetch < 10_000) return localModels;
+    const discovered = await listLocalModels(devKey.baseUrl);
+    const envModels = [
+      ...(env.JEV_MODEL ? [env.JEV_MODEL.trim()] : []),
+      ...(env.JEV_MODELS ? env.JEV_MODELS.split(',').map((s) => s.trim()).filter(Boolean) : []),
+    ];
+    const combined = [...new Set([...discovered, ...envModels])];
+    if (combined.length > 0) {
+      localModels = combined;
+      lastModelsFetch = now;
+      return localModels;
+    }
+    return undefined;
+  };
 
   /**
    * POST /api/highscores: a player's initials and their game's recording; the server replays it for the score. Signed
@@ -255,7 +274,12 @@ export function createJevMiddleware(env: Record<string, string>, logger: RouteLo
       return;
     }
     if (path === '/auth/logout') return send(res, handleLogout(http, cfg));
-    if (path === '/api/me') return send(res, handleMe(http, cfg, devKey?.provider, undefined, access?.pool.current()));
+    if (path === '/api/me') {
+      void getAvailableModels()
+        .then((mods) => send(res, handleMe(http, cfg, devKey?.provider, env, access?.pool.current(), mods)))
+        .catch(() => abort(res));
+      return;
+    }
     if (path !== '/api/decide' && path !== '/api/warm') return next();
 
     // Refuse what needs no body (wrong method, cross-site, not JSON, signed out, over a free-credits limit) before reading any of it.

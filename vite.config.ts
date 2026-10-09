@@ -24,6 +24,6 @@ export default defineConfig(({ mode, isSsrBuild }) => {
     // The page; or, with --ssr, the server's bundle of the game code (the high-score check), which needs no public files.
     build: isSsrBuild ? { copyPublicDir: false } : { rollupOptions: { input: { main: 'index.html', leaderboard: 'leaderboard.html' } } },
     // Some tests replay whole games, which can take several seconds on a busy CI runner.
-    test: { include: ['tests/**/*.test.ts'], testTimeout: 30_000 },
+    test: { include: ['tests/**/*.test.ts'], testTimeout: 30_000, env: { JEV_MODEL: '' } },
   };
 });
