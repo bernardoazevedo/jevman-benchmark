@@ -44,6 +44,8 @@ export interface GameState {
   pacmanControl: PacmanControl;
   /** Whether models play the ghosts while the player steers Pac-Man; false: the classic scripted ghosts (no AI). */
   ghostsByAI: boolean;
+  /** Which actor is controlled by the human player ('pacman' by default, or one of the ghosts). */
+  playerActor?: ActorId;
   keyDir: Dir | null;
   status: Status;
   statusTimer: number;
@@ -119,19 +121,22 @@ export function fruitForLevel(level: number): { kind: string; points: number } {
   return { kind, points };
 }
 
-export function createGame(opts: { pacmanControl?: PacmanControl; ghostsByAI?: boolean } = {}): GameState {
+export function createGame(opts: { pacmanControl?: PacmanControl; ghostsByAI?: boolean; playerActor?: ActorId } = {}): GameState {
   const base = { tile: { x: 0, y: 0 }, dir: 'left' as Dir, progress: 0, waiting: false, epoch: 0 };
   const ghosts = Object.fromEntries(
     GHOST_IDS.map((id) => [id, { ...base, id, state: 'house' as GhostState, releaseAt: 0 }]),
   ) as Record<GhostId, Ghost>;
+  const player = opts.playerActor ?? 'pacman';
+  const isGhostPlayer = player !== 'pacman';
   const state: GameState = {
     layout: CLASSIC_LAYOUT,
     maze: new Maze(CLASSIC_LAYOUT),
     pacman: { ...base, id: 'pacman' },
     ghosts,
-    pacmanControl: opts.pacmanControl ?? 'jev',
-    // Unless asked, the AI plays one side: the ghosts when the player steers Pac-Man.
-    ghostsByAI: opts.ghostsByAI ?? (opts.pacmanControl ?? 'jev') === 'keyboard',
+    playerActor: player,
+    pacmanControl: isGhostPlayer ? 'jev' : (opts.pacmanControl ?? 'jev'),
+    // Unless asked, the AI plays one side: the ghosts when the player steers Pac-Man, or Pac-Man/ghosts when human plays a ghost.
+    ghostsByAI: isGhostPlayer ? (opts.ghostsByAI ?? true) : (opts.ghostsByAI ?? (opts.pacmanControl ?? 'jev') === 'keyboard'),
     keyDir: null,
     status: 'ready',
     statusTimer: READY_SECONDS,
@@ -163,13 +168,14 @@ export function resetPositions(state: GameState): void {
   p.epoch += 1;
   for (const id of GHOST_IDS) {
     const g = state.ghosts[id];
-    g.tile = { ...HOUSE_TILES[id] };
-    g.dir = id === 'blinky' ? 'left' : 'up';
+    const isPlayer = state.playerActor === id;
+    g.tile = isPlayer && id !== 'blinky' ? { ...GHOST_DOOR_EXIT } : { ...HOUSE_TILES[id] };
+    g.dir = (id === 'blinky' || isPlayer) ? 'left' : 'up';
     g.progress = 0;
     g.waiting = false;
     g.epoch += 1;
-    g.state = id === 'blinky' ? 'normal' : 'house';
-    g.releaseAt = RELEASE_AT[id];
+    g.state = (id === 'blinky' || isPlayer) ? 'normal' : 'house';
+    g.releaseAt = isPlayer ? 0 : RELEASE_AT[id];
   }
   state.status = 'ready';
   state.statusTimer = READY_SECONDS;
@@ -188,11 +194,15 @@ export const actorOf = (state: GameState, id: ActorId): Actor =>
 const ghostList = (state: GameState): Ghost[] => GHOST_IDS.map((id) => state.ghosts[id]);
 
 /** Who the AI plays: Pac-Man when it steers him, the ghosts when they are played by models (else the classic rules). */
-export function jevActors(state: Pick<GameState, 'pacmanControl' | 'ghostsByAI'>): readonly ActorId[] {
-  return [...(state.pacmanControl === 'jev' ? (['pacman'] as const) : []), ...(state.ghostsByAI ? GHOST_IDS : [])];
+export function jevActors(state: Pick<GameState, 'pacmanControl' | 'ghostsByAI'> & { playerActor?: ActorId }): readonly ActorId[] {
+  const human = state.playerActor ?? 'pacman';
+  const pac = human !== 'pacman' || state.pacmanControl === 'jev' ? (['pacman'] as const) : [];
+  const ghosts = state.ghostsByAI ? GHOST_IDS.filter((g) => g !== human) : [];
+  return [...pac, ...ghosts];
 }
 
 export function isJevDriven(state: GameState, id: ActorId): boolean {
+  if (state.playerActor && state.playerActor !== 'pacman' && id === state.playerActor) return false;
   if (id === 'pacman') return state.pacmanControl === 'jev';
   const s = state.ghosts[id].state;
   return s === 'normal' || s === 'frightened';
@@ -391,7 +401,8 @@ function turnBack(state: GameState, a: Actor): void {
 
 function moveActor(state: GameState, a: Actor, h: number, ctl: Controls): void {
   if (a.waiting && !chooseAt(state, a, ctl)) return;
-  if (a.id === 'pacman' && state.pacmanControl === 'keyboard' && state.keyDir === REVERSE[a.dir] && a.progress > 0) {
+  const isHuman = a.id === (state.playerActor ?? 'pacman') && (a.id === 'pacman' ? state.pacmanControl === 'keyboard' : true);
+  if (isHuman && state.keyDir === REVERSE[a.dir] && a.progress > 0) {
     turnBack(state, a);
   }
   if (a.id === 'pacman' && state.pacmanControl === 'jev') {
@@ -424,7 +435,8 @@ function chooseAt(state: GameState, a: Actor, ctl: Controls): boolean {
 
 function nextDir(state: GameState, a: Actor, ctl: Controls): Dir | null {
   const { maze } = state;
-  if (a.id === 'pacman' && state.pacmanControl === 'keyboard') {
+  const isHuman = a.id === (state.playerActor ?? 'pacman') && (a.id === 'pacman' ? state.pacmanControl === 'keyboard' : true);
+  if (isHuman && a.id === 'pacman') {
     const open = maze.openDirs(a.tile);
     if (state.keyDir && open.includes(state.keyDir)) return state.keyDir;
     return open.includes(a.dir) ? a.dir : null;
@@ -433,6 +445,12 @@ function nextDir(state: GameState, a: Actor, ctl: Controls): Dir | null {
     const home = maze.distanceMap(GHOST_DOOR_EXIT);
     const dist = (d: Dir) => home[maze.key(maze.neighbor(a.tile, d))];
     return maze.openDirs(a.tile).reduce((best, d) => (dist(d) < dist(best) ? d : best));
+  }
+  if (isHuman && a.id !== 'pacman') {
+    const open = optionsAt(state, a.id, a.tile, a.dir);
+    if (state.keyDir && open.includes(state.keyDir)) return state.keyDir;
+    if (open.includes(a.dir)) return a.dir;
+    return open[0] ?? null;
   }
   const forced = forcedDir(state, a.tile, a.dir);
   if (forced) return forced;

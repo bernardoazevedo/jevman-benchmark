@@ -4,7 +4,7 @@ import { boardLabel, type BoardEntry, type Boards } from './highscores';
 import { isModelId, modelName } from '../shared/models';
 import { logoFor } from './logos';
 import type { GameSummary } from './stats';
-import { GHOST_IDS, type GhostId } from './types';
+import { GHOST_IDS, type ActorId, type GhostId } from './types';
 import { versus } from './versus';
 
 /** Which model plays each ghost. */
@@ -109,8 +109,10 @@ export interface PickerOptions {
   /** Who pays, in a line under Start (or why nobody can). */
   costNote: string;
   loginAvailable: boolean;
+  playerActor?: ActorId;
   onChange: (lineup: Lineup) => void;
-  onStart: () => void;
+  onSelectPlayer?: (actor: ActorId) => void;
+  onStart: (playerActor?: ActorId) => void;
   onClassic: () => void;
   onLogin: () => void;
   onBack: () => void;
@@ -277,21 +279,61 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   close.type = 'button';
   close.setAttribute('aria-label', 'Close');
   close.addEventListener('click', o.onBack);
+  let player: ActorId = o.playerActor ?? 'pacman';
+  const ttl = el('p', 'Who plays the ghosts?', 'ttl');
+  const playerBar = el('div', undefined, 'opts');
+  playerBar.setAttribute('role', 'radiogroup');
+  playerBar.setAttribute('aria-label', 'You play:');
+  const PLAYER_CHOICES: { id: ActorId; label: string }[] = [
+    { id: 'pacman', label: 'Pac-Man' },
+    { id: 'blinky', label: 'Blinky' },
+    { id: 'pinky', label: 'Pinky' },
+    { id: 'inky', label: 'Inky' },
+    { id: 'clyde', label: 'Clyde' },
+  ];
   const head = el('div', undefined, 'colh');
-  head.append(el('span', 'Ghost'), el('span', 'AI model'));
-  card.append(close, el('p', 'Who plays the ghosts?', 'ttl'), head);
+  head.append(el('span', 'Character'), el('span', 'Controlled by'));
+  card.append(close, ttl, el('p', 'You play:', 'colh'), playerBar, head);
   const roster = el('ol', undefined, 'roster');
   const opts = el('div', undefined, 'opts');
   opts.setAttribute('role', 'group');
   opts.setAttribute('aria-label', 'Lineups');
   const all = presets(o.offered);
+  const hint = el('p', 'Tap a ghost to switch its AI', 'tap');
   const render = () => {
+    ttl.textContent = player === 'pacman' ? 'Who plays the ghosts?' : `Hunt Pac-Man as ${GHOST_NAMES[player]}!`;
+    hint.textContent = player === 'pacman' ? 'Tap a ghost to switch its AI' : `You steer ${GHOST_NAMES[player]} · Pac-Man is played by AI`;
+    playerBar.replaceChildren(
+      ...PLAYER_CHOICES.map((c) => {
+        const b = el('button', c.label);
+        b.type = 'button';
+        b.setAttribute('aria-pressed', String(c.id === player));
+        b.addEventListener('click', () => {
+          player = c.id;
+          o.onSelectPlayer?.(player);
+          renderAll();
+        });
+        return b;
+      }),
+    );
     const lineup = o.lineup();
     roster.replaceChildren(
       ...GHOST_IDS.map((g) => {
         const li = el('li');
         const b = el('button');
         b.type = 'button';
+        if (g === player) {
+          b.style.setProperty('--gc', '#ffd800');
+          b.setAttribute('aria-label', `${GHOST_NAMES[g]}: You (Keyboard)`);
+          b.title = `${GHOST_NAMES[g]}: You (Keyboard)`;
+          const md = el('span', '🎮 You', 'md');
+          md.style.color = '#ffd800';
+          const lead = el('span', undefined, 'lead');
+          lead.setAttribute('aria-hidden', 'true');
+          b.append(ghostIcon(g, ARCADE_FILL[g]), el('span', GHOST_NAMES[g], 'gn'), lead, md);
+          li.append(b);
+          return li;
+        }
         b.style.setProperty('--gc', ARCADE_FILL[g]);
         b.setAttribute('aria-label', `${GHOST_NAMES[g]}: ${modelName(lineup[g])}. Switch model`);
         b.title = `${GHOST_NAMES[g]}: ${modelName(lineup[g])} (tap to switch)`;
@@ -322,6 +364,9 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
         return b;
       }),
     );
+    if (startLabel) {
+      startLabel.textContent = player === 'pacman' ? 'Press start' : `Play as ${GHOST_NAMES[player]}`;
+    }
   };
   const hs = el('div', undefined, 'hs');
   const renderBoard = () => {
@@ -335,8 +380,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     render();
     renderBoard();
   };
-  renderAll();
-  card.append(roster, el('p', 'Tap a ghost to switch its AI', 'tap'), opts, hs);
+  card.append(roster, hint, opts, hs);
   const status = el('p', undefined, 'tap');
   status.setAttribute('aria-live', 'polite');
   // The marker blinks, the words stay: a button that blinks out entirely reads as broken.
@@ -351,7 +395,7 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
   let start: HTMLButtonElement;
   if (o.canPlay) {
     start = press('Press start');
-    start.addEventListener('click', o.onStart);
+    start.addEventListener('click', () => o.onStart(player));
     card.append(start, el('p', o.costNote, 'cost'));
   } else {
     start = press('Sign in to play');
@@ -362,17 +406,18 @@ export function showPicker(root: HTMLElement, o: PickerOptions): Picker {
     classic.addEventListener('click', o.onClassic);
     card.append(start, el('p', o.costNote, 'cost warn'), classic);
   }
+  const startLabel = start.querySelector<HTMLElement>('.lbl')!;
+  renderAll();
   const back = el('button', 'Back to watching', 'back');
   back.type = 'button';
   back.addEventListener('click', o.onBack);
   card.append(status, back);
   show(root, card, start);
-  const startLabel = start.querySelector<HTMLElement>('.lbl')!;
   return {
     busy: (note) => {
       if (!o.canPlay) return;
       start.toggleAttribute('aria-disabled', note !== null);
-      startLabel.textContent = note ?? 'Press start';
+      startLabel.textContent = note ?? (player === 'pacman' ? 'Press start' : `Play as ${GHOST_NAMES[player]}`);
     },
     note: (text) => {
       status.textContent = text ?? '';
@@ -387,6 +432,7 @@ export interface GameOverOptions {
   lineup: Lineup | null;
   board: Leaderboard | null;
   newBest?: boolean;
+  playerActor?: ActorId;
   onPlayAgain: () => void;
   onShare: () => Promise<'shared' | 'copied' | 'failed' | 'cancelled'>;
   onReview: (() => void) | null;
@@ -404,8 +450,9 @@ export function showGameOver(root: HTMLElement, o: GameOverOptions): void {
   const card = el('div', undefined, 'card arc over');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-label', 'Game over');
-  card.append(el('p', 'Game over', 'over-title'));
-  if (o.newBest) card.append(el('p', 'New personal best', 'over-best'));
+  const isGhost = o.playerActor && o.playerActor !== 'pacman';
+  card.append(el('p', isGhost ? `Caught Pac-Man as ${GHOST_NAMES[o.playerActor!]}` : 'Game over', 'over-title'));
+  if (o.newBest && !isGhost) card.append(el('p', 'New personal best', 'over-best'));
   card.append(el('p', s.score.toLocaleString('en-US'), 'over-score'));
   if (o.entry) card.append(boardBlock(o.entry));
   // A dotted line, as on the roster: name on the left, number on the right.

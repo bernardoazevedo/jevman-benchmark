@@ -132,6 +132,18 @@ function drawGhost(ctx: CanvasRenderingContext2D, state: GameState, g: Ghost, t:
     ctx.arc(ex + v.x * r * 0.12, ey + v.y * r * 0.12, r * 0.14, 0, Math.PI * 2);
     ctx.fill();
   }
+  if (state.playerActor === g.id && state.status !== 'gameover') {
+    const bounce = Math.sin(t * 8) * 3;
+    const ay = y - r - 6 + bounce;
+    ctx.fillStyle = '#ffd800';
+    ctx.beginPath();
+    ctx.moveTo(x, ay);
+    ctx.lineTo(x - 4, ay - 6);
+    ctx.lineTo(x + 4, ay - 6);
+    ctx.closePath();
+    ctx.fill();
+    drawText(ctx, 'YOU', x / TILE - 0.5, (ay - 10) / TILE - 0.5, '#ffd800', 8);
+  }
 }
 
 function drawThinking(ctx: CanvasRenderingContext2D, a: Actor, t: number): void {

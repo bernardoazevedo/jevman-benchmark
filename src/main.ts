@@ -20,7 +20,7 @@ import { Thinking } from './thinking';
 import { attachTouch } from './touch';
 import { tag, track, trackClicks } from './track';
 import { createHttpTransport, warmUp, type TransportHooks } from './transport';
-import { GHOST_IDS, type Dir } from './types';
+import { GHOST_IDS, type ActorId, type Dir } from './types';
 import { shareText, versus } from './versus';
 import { ModelWarming } from './warming';
 import type { Community, Leaderboard } from '../shared/leaderboard';
@@ -238,7 +238,7 @@ const warming = new ModelWarming({
 const problemOf = (models: string[]) => models.map((m) => warmProblems.get(m)).find((p) => p !== undefined);
 
 // ---------- what is on the board ----------
-type Mode = { kind: 'recording'; model: string } | { kind: 'play'; lineup: Lineup | null };
+type Mode = { kind: 'recording'; model: string } | { kind: 'play'; lineup: Lineup | null; playerActor?: ActorId };
 let mode: Mode = { kind: 'recording', model: DEFAULT_MODEL };
 let demo: DemoPlayer | null = null;
 /** Whether a live game runs (anything but a recording). */
@@ -305,22 +305,31 @@ const recorderControls: Controls = {
   },
 };
 
-const short = (model: string) => modelName(model).replace(/ 1\.13$/, '');
+const actorModel = (actor: ActorId): string => choice[actor] ?? defaultModel;
+const short = (model?: string) => (model ? (modelName(model) ?? model).replace(/ 1\.13$/, '') : '');
 /** The top strip, as on the cabinet: who plays Pac-Man over the score (or a status line), and the ghosts where 2UP is. */
 function setPlate(label: string | null = null): void {
   if (label !== null) {
     plateLabel.textContent = label;
     return;
   }
-  plateLabel.textContent =
-    mode.kind === 'recording'
-      ? modelName(mode.model)
-      : state.pacmanControl === 'jev'
-        ? short(requestModel(choice, 'pacman', defaultModel))
+  if (mode.kind === 'recording') {
+    plateLabel.textContent = modelName(mode.model);
+  } else if (state.playerActor && state.playerActor !== 'pacman') {
+    plateLabel.textContent = `You (${GHOST_NAMES[state.playerActor]})`;
+  } else {
+    plateLabel.textContent =
+      state.pacmanControl === 'jev'
+        ? short(actorModel('pacman'))
         : 'You';
+  }
   const lineup = mode.kind === 'play' ? mode.lineup : null;
   const models = lineup ? [...new Set(GHOST_IDS.map((g) => lineup[g]))] : [];
-  ghostsEl.textContent = !lineup ? 'Classic' : models.length === 1 ? short(models[0]!) : 'Mixed AIs';
+  if (state.playerActor && state.playerActor !== 'pacman') {
+    ghostsEl.textContent = `Pac-Man: ${short(actorModel('pacman'))}`;
+  } else {
+    ghostsEl.textContent = !lineup ? 'Classic' : models.length === 1 ? short(models[0]!) : 'Mixed AIs';
+  }
 }
 
 function renderChips(): void {
@@ -431,12 +440,22 @@ function startGame(next: Exclude<Mode, { kind: 'recording' }>): void {
   mode = next;
   track('game_start', gameProps(next.lineup));
   choice = next.lineup ? { ...base, ...next.lineup } : { ...base };
-  state = createGame({ pacmanControl: 'keyboard', ghostsByAI: next.lineup !== null });
-  recorder = next.lineup ? new Recorder() : null;
+  const player = next.playerActor ?? 'pacman';
+  const isGhost = player !== 'pacman';
+  state = createGame({
+    pacmanControl: isGhost ? 'jev' : 'keyboard',
+    ghostsByAI: next.lineup !== null,
+    playerActor: player,
+  });
+  recorder = !isGhost && next.lineup ? new Recorder() : null;
   recFrame = 0;
   recSteps = 0;
   stepAcc = 0;
   log.begin(next.lineup ? { kind: 'ghosts', lineup: next.lineup } : { kind: 'classic' });
+  if (isGhost && canUseAI) {
+    const pacModel = actorModel('pacman');
+    if (!warming.isWarm(pacModel)) void warming.warm(pacModel);
+  }
   hideOverlay(overlayEl);
   dim(false);
   gameOverShown = false;
@@ -497,6 +516,8 @@ const costNote = (): string => {
   return `Free while the shared credits last${left ? ` (${left} left)` : ''}, at about 2¢ a game.`;
 };
 
+let playerChoice: ActorId = 'pacman';
+
 /** "▶ Play against the AIs": who plays the ghosts, then Start. */
 function openPicker(): void {
   if (picker || scoresOpen) return;
@@ -508,6 +529,7 @@ function openPicker(): void {
   const ghostModels = () => [...new Set(GHOST_IDS.map((g) => lineup[g]))];
   const p = showPicker(overlayEl, {
     lineup: () => lineup,
+    playerActor: playerChoice,
     offered,
     canPlay: canUseAI,
     costNote: costNote(),
@@ -518,9 +540,17 @@ function openPicker(): void {
       // Wake them while the player is still choosing: one tiny call each.
       if (canUseAI) for (const m of ghostModels()) void warming.warm(m);
     },
-    onStart: () => {
+    onSelectPlayer: (actor) => {
+      playerChoice = actor;
+    },
+    onStart: (actor) => {
+      const chosen = actor ?? playerChoice;
       const l = { ...lineup };
       const models = ghostModels();
+      if (chosen !== 'pacman') {
+        const pacModel = actorModel('pacman');
+        if (!models.includes(pacModel)) models.push(pacModel);
+      }
       const id = gameId;
       // The button says it short; the line under it names who is waking.
       void warming.warmAll(() => models, (cold) => { p.busy('Waking up…'); p.note(`Waking up ${cold.map(short).join(' and ')}`); }).then((failed) => {
@@ -533,12 +563,12 @@ function openPicker(): void {
         // One sleepy model shouldn't hold up the game: an awake one plays its ghosts this time.
         const stand = awake.includes(defaultModel) ? defaultModel : awake[0];
         const played = Object.fromEntries(GHOST_IDS.map((g) => [g, failed.includes(l[g]) ? stand : l[g]])) as Lineup;
-        startGame({ kind: 'play', lineup: played });
+        startGame({ kind: 'play', lineup: played, playerActor: chosen });
         const stood = GHOST_IDS.filter((g) => played[g] !== l[g]).map((g) => GHOST_NAMES[g]);
         if (stood.length) notice(`${failed.map(modelName).join(' and ')} didn't wake up in time, so ${modelName(stand)} plays ${stood.join(' and ')} this game.`);
       });
     },
-    onClassic: () => startGame({ kind: 'play', lineup: null }),
+    onClassic: () => startGame({ kind: 'play', lineup: null, playerActor: playerChoice }),
     onLogin: () => {
       track('click_login', { source: 'picker' });
       signIn();
@@ -628,13 +658,15 @@ function gameOver(): void {
     newBest = summary.score > readBest();
     if (newBest) writeBest(summary.score);
   }
-  const again = () => startGame({ kind: 'play', lineup: l });
+  const playerActor = mode.playerActor;
+  const again = () => startGame({ kind: 'play', lineup: l, playerActor });
   overlayAction = again;
   showGameOver(overlayEl, {
     summary,
     lineup: l,
     board,
     newBest,
+    playerActor,
     entry: l ? boardEntry(l, summary.score) : null,
     onPlayAgain: again,
     onShare: async () => {
@@ -779,14 +811,23 @@ document.addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && live && !paused && overlayEl.hidden) setPaused(true);
 });
+const isHumanSteering = () =>
+  live &&
+  (state.playerActor && state.playerActor !== 'pacman' ? true : state.pacmanControl === 'keyboard') &&
+  overlayEl.hidden === true;
+
 const steer = (dir: Dir) => {
-  if (live && state.pacmanControl === 'keyboard') state.keyDir = dir;
+  if (isHumanSteering()) state.keyDir = dir;
 };
-attachTouch(tvGameEl, steer, () => live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true);
+attachTouch(tvGameEl, steer, isHumanSteering);
 
 function togglePacman(): void {
   if (mode.kind !== 'play' || !live || gameOverShown) return;
-  const pacmanModel = requestModel(choice, 'pacman', defaultModel);
+  if (state.playerActor && state.playerActor !== 'pacman') {
+    notice(`You are controlling ${GHOST_NAMES[state.playerActor]}`);
+    return;
+  }
+  const pacmanModel = actorModel('pacman');
   if (state.pacmanControl === 'keyboard') {
     if (!canUseAI) {
       notice('AI is not available');
@@ -815,7 +856,7 @@ window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || typeof e.key !== 'string') return;
   if (e.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
   const dir = KEYS[e.key] ?? KEYS[e.key.toLowerCase()];
-  if (dir && live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true) {
+  if (dir && isHumanSteering()) {
     steer(dir);
     e.preventDefault();
     return;
@@ -928,7 +969,7 @@ function frame(now: number): void {
     shownLives = state.lives;
     livesEl.replaceChildren(...Array.from({ length: Math.max(0, state.lives) }, () => Object.assign(document.createElement('span'), { className: 'pac' })));
   }
-  const steering = live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true;
+  const steering = isHumanSteering();
   if (swipePad.hidden === (touchScreen && steering)) swipePad.hidden = !(touchScreen && steering);
   // The pad shows your last swipe: where Pac-Man is heading, or the turn he takes at the next opening.
   const swiped = steering ? (state.keyDir ?? '') : '';

@@ -12,6 +12,8 @@ import {
   nextDecisionPoint,
   READY_SECONDS,
   step,
+  isJevDriven,
+  jevActors,
   type Controls,
   type GameState,
   type PacmanControl,
@@ -396,5 +398,31 @@ describe('escape points', () => {
     expect(s.pacman.dir).toBe('left');
     expect(s.pacman.waiting).toBe(false);
     expect(s.pacman.tile.x).toBeLessThan(10);
+  });
+});
+
+describe('human ghost control', () => {
+  it('allows playing as Blinky with keyboard steering', () => {
+    const s = createGame({ playerActor: 'blinky' });
+    expect(s.playerActor).toBe('blinky');
+    expect(s.pacmanControl).toBe('jev');
+    expect(isJevDriven(s, 'blinky')).toBe(false);
+    expect(isJevDriven(s, 'pacman')).toBe(true);
+    expect(jevActors(s)).toContain('pacman');
+    expect(jevActors(s)).not.toContain('blinky');
+
+    s.status = 'playing';
+    s.statusTimer = 0;
+    // Steer Blinky with keyboard
+    s.keyDir = 'left';
+    step(s, 0.2, never);
+    expect(s.ghosts.blinky.dir).toBe('left');
+  });
+
+  it('releases player ghosts like Pinky outside the house immediately', () => {
+    const s = createGame({ playerActor: 'pinky' });
+    expect(s.ghosts.pinky.state).toBe('normal');
+    expect(s.ghosts.pinky.releaseAt).toBe(0);
+    expect(s.ghosts.pinky.tile).toEqual(GHOST_DOOR_EXIT);
   });
 });
