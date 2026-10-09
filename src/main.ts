@@ -312,7 +312,12 @@ function setPlate(label: string | null = null): void {
     plateLabel.textContent = label;
     return;
   }
-  plateLabel.textContent = mode.kind === 'recording' ? modelName(mode.model) : 'You';
+  plateLabel.textContent =
+    mode.kind === 'recording'
+      ? modelName(mode.model)
+      : state.pacmanControl === 'jev'
+        ? short(requestModel(choice, 'pacman', defaultModel))
+        : 'You';
   const lineup = mode.kind === 'play' ? mode.lineup : null;
   const models = lineup ? [...new Set(GHOST_IDS.map((g) => lineup[g]))] : [];
   ghostsEl.textContent = !lineup ? 'Classic' : models.length === 1 ? short(models[0]!) : 'Mixed AIs';
@@ -779,6 +784,33 @@ const steer = (dir: Dir) => {
 };
 attachTouch(tvGameEl, steer, () => live && state.pacmanControl === 'keyboard' && overlayEl.hidden === true);
 
+function togglePacman(): void {
+  if (mode.kind !== 'play' || !live || gameOverShown) return;
+  const pacmanModel = requestModel(choice, 'pacman', defaultModel);
+  if (state.pacmanControl === 'keyboard') {
+    if (!canUseAI) {
+      notice('AI is not available');
+      return;
+    }
+    state.pacmanControl = 'jev';
+    state.keyDir = null;
+    recorder = null;
+    if (!warming.isWarm(pacmanModel)) void warming.warm(pacmanModel);
+    setPlate();
+    notice(`Pac-Man handed to ${short(pacmanModel)} · press J to take him back`);
+  } else {
+    state.pacmanControl = 'keyboard';
+    state.keyDir = null;
+    setPlate();
+    notice('Pac-Man back in your hands');
+  }
+}
+function restart(): void {
+  if (mode.kind === 'play' && (live || gameOverShown)) startGame(mode);
+}
+plateLabel.style.cursor = 'pointer';
+plateLabel.addEventListener('click', togglePacman);
+
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || typeof e.key !== 'string') return;
   if (e.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
@@ -805,6 +837,8 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'p') togglePause();
   else if (k === 'm') toggleSound();
+  else if (k === 'j') togglePacman();
+  else if (k === 'r') restart();
 });
 
 // ---------- the leaderboard below ----------
